@@ -203,12 +203,12 @@ gpg-get-args_command() {
 }
 
 gpg-reset-args_command() {
-  $GIT_BIN config trk.gpg-args '--batch --yes --verbose'
+  $GIT_BIN config --local trk.gpg-args '--batch --yes --verbose'
 }
 
 gpg-set-args_command() {
   args="$@"
-  $GIT_BIN config trk.gpg-args "$args"
+  $GIT_BIN config --local trk.gpg-args "$args"
 }
 
 
@@ -224,10 +224,10 @@ add_command_post() {
 
 configure_repo() {
   worktree="$1"
-  $GIT_BIN config core.bare false
-  $GIT_BIN config core.worktree "$worktree"
-  $GIT_BIN config status.showUntrackedFiles no
-  $GIT_BIN config trk.managed true
+  $GIT_BIN config --local core.bare false
+  $GIT_BIN config --local core.worktree "$worktree"
+  $GIT_BIN config --local status.showUntrackedFiles no
+  $GIT_BIN config --local trk.managed true
   gpg-reset-args_command
 }
 
