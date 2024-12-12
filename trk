@@ -1,0 +1,296 @@
+#!/bin/bash
+
+set -eu
+
+TRK_BIN="trk"
+GIT_BIN="git"
+GPG_BIN="gpg"
+
+SHARE_DIR=~/.local/share/trk
+GIT_REPO_DIR="$SHARE_DIR/repo.git"
+
+
+
+help_command() {
+  cat <<EOF
+Usage: $TRK_BIN <command> [options]
+
+Git wrapper for managing repositories with specific worktrees.
+Any git command can be used as a <command>.
+
+Commands:
+  init            Initialize a new repository with a specific worktree
+  clone           Clone a repository with a specific worktree
+  encrypt         Encrypt a file
+  decrypt         Decrypt a file
+  gpg set-args    Set GPG arguments for encryption and decryption
+  gpg get-args    Get GPG arguments for encryption and decryption
+  gpg reset-args  Reset GPG arguments to default
+  help            Show this help message
+
+Options:
+
+  -f, --force  Force the command
+  -h, --help   Show this help message
+
+Files:
+  Repository: $GIT_REPO_DIR
+  Worktree: $($GIT_BIN config core.worktree)
+EOF
+}
+
+# Git commands
+
+clone_help_command() {
+  cat <<EOF
+Usage: $TRK_BIN clone <repository> [options]
+
+Clone a repository into the current worktree.
+
+Options:
+
+  -f, --force  Force the command
+EOF
+}
+
+clone_command() {
+  if [ $# -lt 2 ]; then
+    clone_help_command
+    exit 0
+  fi
+
+  if [ -d "$GIT_REPO_DIR" ]; then
+    if [ "$FORCE" = true ]; then
+      rm -rf "$GIT_REPO_DIR"
+    else
+      echo "Repository already exists. Use -f to force."
+      exit 1
+    fi
+  fi
+
+  worktree="$(realpath -e "$1")"
+  shift
+
+  echo "Cloning repository with worktree $worktree"
+
+  $GIT_BIN clone --no-checkout --bare "$@" "$GIT_DIR"
+  configure_repo "$worktree"
+  $GIT_BIN reset --mixed --quiet
+  modified_files="$($GIT_BIN ls-files --modified)"
+  if [ -n "$modified_files" ]; then
+    cat <<EOF
+Local files differ from the cloned repository.
+Review and apply the changes manually.
+
+  $TRK_BIN status
+  $TRK_BIN checkout -- <file> # keep remote changes
+  $TRK_BIN add <file> # keep local changes
+EOF
+    exit 1
+  fi
+}
+
+init_help_command() {
+  cat <<EOF
+Usage: $TRK_BIN init <worktree> [options]
+
+Initialize a new repository for the given worktree.
+
+Options:
+
+  -f, --force  Force the command
+EOF
+}
+
+init_command() {
+	if [ $# -lt 1 ]; then
+    init_help_command
+    exit 0
+  fi
+
+  if [ -d "$GIT_REPO_DIR" ]; then
+    if [ "$FORCE" = true ]; then
+      rm -rf "$GIT_REPO_DIR"
+    else
+      echo "Repository already exists. Use -f to force."
+      exit 1
+    fi
+  fi
+
+  worktree="$(realpath -e "$1")"
+  echo "Initializing repository for worktree $worktree"
+
+  $GIT_BIN init --bare
+  configure_repo "$worktree"
+}
+
+# Encryption
+
+encrypt_help_command() {
+  cat <<EOF
+Usage: $TRK_BIN encrypt <file>
+
+Encrypt a file with GPG. See set-gpg-args to override GPG arguments.
+
+Options:
+
+  -f, --force  Force the command
+EOF
+}
+
+ask_file_overwrite() {
+  read -p "$1 already exists. Overwrite? [y/N] " -n 1 -r
+  printf "\n"
+  if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+    return 1
+  fi
+
+  return 0
+}
+
+encrypt_command() {
+  if [ $# -lt 1 ]; then
+    encrypt_help_command
+    exit 0
+  fi
+
+  args="$($GIT_BIN config trk.gpg-args)"
+  src="$1"
+  dst="$src.gpg"
+  shift
+  if [ -f "$dst" ]; then
+    if [ "$FORCE" != true ]; then
+      ask_file_overwrite "$dst" || exit 1
+    fi
+    rm -f "$dst"
+  fi
+  $GPG_BIN $args --symmetric "$@" --output "$dst" "$src"
+}
+
+decrypt_help_command() {
+  cat <<EOF
+Usage: $TRK_BIN decrypt <file>
+
+Decrypt a file with GPG. See set-gpg-args to override GPG arguments.
+
+Options:
+
+  -f, --force  Force the command
+EOF
+}
+
+decrypt_command() {
+  if [ $# -lt 1 ]; then
+    decrypt_help_command
+    exit 0
+  fi
+
+  args="$($GIT_BIN config trk.gpg-args)"
+  src="$1"
+  dst="${src%.gpg}"
+  shift
+  if [ -f "$dst" ]; then
+    if [ "$FORCE" != true ]; then
+      ask_file_overwrite "$dst" || exit 1
+    fi
+    rm -f "$dst"
+  fi
+  $GPG_BIN $args --decrypt "$@" --output "$dst" "$src"
+}
+
+gpg-get-args_command() {
+  $GIT_BIN config trk.gpg-args
+}
+
+gpg-reset-args_command() {
+  $GIT_BIN config trk.gpg-args '--batch --yes --verbose'
+}
+
+gpg-set-args_command() {
+  args="$@"
+  $GIT_BIN config trk.gpg-args "$args"
+}
+
+
+# Hooks
+
+add_command_post() {
+  if [ $1 -eq 128 ]; then
+    echo "only files in the $($GIT_BIN config core.worktree) worktree are allowed."
+  fi
+}
+
+# Helpers
+
+configure_repo() {
+  worktree="$1"
+  $GIT_BIN config core.bare false
+  $GIT_BIN config core.worktree "$worktree"
+  $GIT_BIN config status.showUntrackedFiles no
+  $GIT_BIN config trk.managed true
+  gpg-reset-args_command
+}
+
+ensure_dir() {
+  [ -d "$SHARE_DIR" ] || mkdir -p "$SHARE_DIR"
+}
+
+ensure_bins() {
+  command -v $GIT_BIN >/dev/null 2>&1 || { echo >&2 "Git is required but not installed. Aborting."; exit 1; }
+  command -v $GPG_BIN >/dev/null 2>&1 || { echo >&2 "GPG is required but not installed. Aborting."; exit 1; }
+}
+
+set_env() {
+  export GIT_DIR="$GIT_REPO_DIR"
+}
+
+main() {
+  set_env
+  ensure_dir
+  ensure_bins
+
+	# handle no arguments case
+	if [ $# -lt 1 ]; then
+		help_command
+		exit 0
+	fi
+
+	COMMAND="$1"
+	shift
+
+  if [ "$COMMAND" = "gpg" ]; then
+    SUBCOMMAND="$1"
+    shift
+    COMMAND="gpg-$SUBCOMMAND"
+  fi
+
+	FORCE=false
+
+  args=()
+  while [[ $# -gt 0 ]] ; do
+		case "$1" in
+			-f|--force)
+				FORCE=true
+				shift 1
+				continue
+				;;
+			*)
+        args+=("$1")
+        shift 1
+				;;
+		esac
+	done
+
+
+  if declare -F "${COMMAND}_command" &>/dev/null; then
+    "${COMMAND}_command" "${args[@]}"
+  else
+    $GIT_BIN "$COMMAND" "${args[@]}"
+  fi
+
+  #if declare -F "${COMMAND}_command_post" &>/dev/null; then
+  #  "${COMMAND}_command_post" "$git_exit_code" "${args[@]}"
+  #fi
+}
+
+main "$@"
