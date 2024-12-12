@@ -21,8 +21,10 @@ Any git command can be used as a <command>.
 Commands:
   init            Initialize a new repository with a specific worktree
   clone           Clone a repository with a specific worktree
-  encrypt         Encrypt a file
-  decrypt         Decrypt a file
+  set encrypt     Mark a file to be encrypted when committed
+  unset encrypt   Remove encryption mark from a file
+  gpg encrypt     Encrypt a file
+  gpg decrypt     Decrypt a file
   gpg set-args    Set GPG arguments for encryption and decryption
   gpg get-args    Get GPG arguments for encryption and decryption
   gpg reset-args  Reset GPG arguments to default
@@ -126,18 +128,6 @@ init_command() {
 
 # Encryption
 
-encrypt_help_command() {
-  cat <<EOF
-Usage: $TRK_BIN encrypt <file>
-
-Encrypt a file with GPG. See set-gpg-args to override GPG arguments.
-
-Options:
-
-  -f, --force  Force the command
-EOF
-}
-
 ask_file_overwrite() {
   read -p "$1 already exists. Overwrite? [y/N] " -n 1 -r
   printf "\n"
@@ -148,9 +138,21 @@ ask_file_overwrite() {
   return 0
 }
 
-encrypt_command() {
+gpg-encrypt_help_command() {
+  cat <<EOF
+Usage: $TRK_BIN gpg encrypt <file>
+
+Encrypt a file with GPG. See set-gpg-args to override GPG arguments.
+
+Options:
+
+  -f, --force  Force the command
+EOF
+}
+
+gpg-encrypt_command() {
   if [ $# -lt 1 ]; then
-    encrypt_help_command
+    gpg-encrypt_help_command
     exit 0
   fi
 
@@ -167,9 +169,9 @@ encrypt_command() {
   $GPG_BIN $args --symmetric "$@" --output "$dst" "$src"
 }
 
-decrypt_help_command() {
+gpg-decrypt_help_command() {
   cat <<EOF
-Usage: $TRK_BIN decrypt <file>
+Usage: $TRK_BIN gpg decrypt <file>
 
 Decrypt a file with GPG. See set-gpg-args to override GPG arguments.
 
@@ -179,9 +181,9 @@ Options:
 EOF
 }
 
-decrypt_command() {
+gpg-decrypt_command() {
   if [ $# -lt 1 ]; then
-    decrypt_help_command
+    gpg-decrypt_help_command
     exit 0
   fi
 
