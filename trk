@@ -21,8 +21,8 @@ Any git command can be used as a <command>.
 Commands:
   init            Initialize a new repository with a specific worktree
   clone           Clone a repository with a specific worktree
-  set encrypt     Mark a file to be encrypted when committed
-  unset encrypt   Remove encryption mark from a file
+  encrypt set     Mark a file to be encrypted when committed
+  encrypt unset   Remove encryption mark from a file
   gpg encrypt     Encrypt a file
   gpg decrypt     Decrypt a file
   gpg set-args    Set GPG arguments for encryption and decryption
@@ -138,6 +138,67 @@ ask_file_overwrite() {
   return 0
 }
 
+generate_attribute() {
+  src="$1"
+  echo "$src filter=crypt diff=crypt"
+}
+
+encrypt-set_help_command() {
+  cat <<EOF
+Usage: $TRK_BIN encrypt set <file>
+
+Mark a file to be encrypted when committed.
+
+Options:
+
+  -f, --force  Force the command
+EOF
+}
+
+encrypt-set_command() {
+  if [ $# -lt 1 ]; then
+    encrypt-set_help_command
+    exit 0
+  fi
+
+  git_root="$($GIT_BIN rev-parse --show-toplevel)"
+  src="$(realpath --relative-to "$git_root" -e "$1")"
+  attribute=$(generate_attribute "$src")
+  [ -f "$git_root/.gitattributes" ] || touch "$git_root/.gitattributes"
+  if grep -qE "^${attribute}$" "$git_root/.gitattributes" >/dev/null; then
+    echo "File is already marked for encryption."
+  else
+    echo "$attribute" >> "$git_root/.gitattributes"
+    $GIT_BIN add "$git_root/.gitattributes"
+  fi
+}
+
+encrypt-unset_help_command() {
+  cat <<EOF
+Usage: $TRK_BIN encrypt unset <file>
+
+Remove encryption mark from a file.
+
+Options:
+
+  -f, --force  Force the command
+EOF
+}
+
+encrypt-unset_command() {
+  if [ $# -lt 1 ]; then
+    encrypt-unset_help_command
+    exit 0
+  fi
+
+  git_root="$($GIT_BIN rev-parse --show-toplevel)"
+  src="$(realpath --relative-to "$git_root" -e "$1")"
+  attribute=$(generate_attribute "$src")
+  [ -f "$git_root/.gitattributes" ] || touch "$git_root/.gitattributes"
+  sed -i "#^${attribute}$#d" "$git_root/.gitattributes"
+  $GIT_BIN add "$git_root/.gitattributes"
+}
+
 gpg-encrypt_help_command() {
   cat <<EOF
 Usage: $TRK_BIN gpg encrypt <file>
@@ -230,6 +291,11 @@ configure_repo() {
   $GIT_BIN config --local core.worktree "$worktree"
   $GIT_BIN config --local status.showUntrackedFiles no
   $GIT_BIN config --local trk.managed true
+
+  $GIT_BIN config --local filter.crypt.clean "base64 -w0"
+  $GIT_BIN config --local filter.crypt.smudge "base64 -d"
+  $GIT_BIN config --local filter.crypt.required true
+  $GIT_BIN config --local diff.crypt.textconv cat
   gpg-reset-args_command
 }
 
@@ -251,37 +317,39 @@ main() {
   ensure_dir
   ensure_bins
 
-	# handle no arguments case
-	if [ $# -lt 1 ]; then
-		help_command
-		exit 0
-	fi
-
-	COMMAND="$1"
-	shift
-
-  if [ "$COMMAND" = "gpg" ]; then
-    SUBCOMMAND="$1"
-    shift
-    COMMAND="gpg-$SUBCOMMAND"
+  # handle no arguments case
+  if [ $# -lt 1 ]; then
+    help_command
+    exit 0
   fi
 
-	FORCE=false
+  COMMAND="$1"
+  shift
+
+  case "$COMMAND" in
+    gpg|encrypt)
+      SUBCOMMAND="$1"
+      shift
+      COMMAND="$COMMAND-$SUBCOMMAND"
+      ;;
+  esac
+
+  FORCE=false
 
   args=()
   while [[ $# -gt 0 ]] ; do
-		case "$1" in
-			-f|--force)
-				FORCE=true
-				shift 1
-				continue
-				;;
-			*)
+    case "$1" in
+      -f|--force)
+        FORCE=true
+        shift 1
+        continue
+        ;;
+      *)
         args+=("$1")
         shift 1
-				;;
-		esac
-	done
+        ;;
+    esac
+  done
 
 
   if declare -F "${COMMAND}_command" &>/dev/null; then
