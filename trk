@@ -4,12 +4,14 @@ set -eu
 
 TRK_BIN="trk"
 GIT_BIN="git"
-GPG_BIN="gpg"
+OPENSSL_BIN="openssl"
 
 SHARE_DIR=~/.local/share/trk
 GIT_REPO_DIR="$SHARE_DIR/repo.git"
+GIT_REPO_TRK_DIR="$GIT_REPO_DIR/trk"
+PASSPHRASE_FILE="$GIT_REPO_TRK_DIR/passphrase"
 
-
+OPENSSL_DEFAULT_ARGS="-aes-256-cbc -md sha256 -pbkdf2"
 
 help_command() {
   cat <<EOF
@@ -19,16 +21,15 @@ Git wrapper for managing repositories with specific worktrees.
 Any git command can be used as a <command>.
 
 Commands:
-  init            Initialize a new repository with a specific worktree
-  clone           Clone a repository with a specific worktree
-  encrypt set     Mark a file to be encrypted when committed
-  encrypt unset   Remove encryption mark from a file
-  gpg encrypt     Encrypt a file
-  gpg decrypt     Decrypt a file
-  gpg set-args    Set GPG arguments for encryption and decryption
-  gpg get-args    Get GPG arguments for encryption and decryption
-  gpg reset-args  Reset GPG arguments to default
-  help            Show this help message
+  init                Initialize a new repository with a specific worktree
+  clone               Clone a repository with a specific worktree
+  encrypt mark        Mark a file to be encrypted when committed
+  encrypt unmark      Remove encryption mark from a file
+  encrypt key         Get the encryption key
+  openssl set-args    Set OpenSSL arguments for encryption and decryption
+  openssl get-args    Get OpenSSL arguments for encryption and decryption
+  openssl reset-args  Reset OpenSSL arguments to default
+  help                Show this help message
 
 Options:
 
@@ -124,28 +125,21 @@ init_command() {
 
   $GIT_BIN init --bare
   configure_repo "$worktree"
+
+  mkdir -p "$GIT_REPO_TRK_DIR"
+  < /dev/urandom tr -cd "[:print:]" | head -c 32 > "$PASSPHRASE_FILE"
 }
 
 # Encryption
-
-ask_file_overwrite() {
-  read -p "$1 already exists. Overwrite? [y/N] " -n 1 -r
-  printf "\n"
-  if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-    return 1
-  fi
-
-  return 0
-}
 
 generate_attribute() {
   src="$1"
   echo "$src filter=crypt diff=crypt"
 }
 
-encrypt-set_help_command() {
+encrypt-mark_help_command() {
   cat <<EOF
-Usage: $TRK_BIN encrypt set <file>
+Usage: $TRK_BIN encrypt mark <file>
 
 Mark a file to be encrypted when committed.
 
@@ -155,9 +149,9 @@ Options:
 EOF
 }
 
-encrypt-set_command() {
+encrypt-mark_command() {
   if [ $# -lt 1 ]; then
-    encrypt-set_help_command
+    encrypt-mark_help_command
     exit 0
   fi
 
@@ -166,16 +160,16 @@ encrypt-set_command() {
   attribute=$(generate_attribute "$src")
   [ -f "$git_root/.gitattributes" ] || touch "$git_root/.gitattributes"
   if grep -qE "^${attribute}$" "$git_root/.gitattributes" >/dev/null; then
-    echo "File is already marked for encryption."
+    echo "$1 is already marked for encryption."
   else
     echo "$attribute" >> "$git_root/.gitattributes"
-    $GIT_BIN add "$git_root/.gitattributes"
   fi
+  $GIT_BIN add "$git_root/.gitattributes"
 }
 
-encrypt-unset_help_command() {
+encrypt-unmark_help_command() {
   cat <<EOF
-Usage: $TRK_BIN encrypt unset <file>
+Usage: $TRK_BIN encrypt unmark <file>
 
 Remove encryption mark from a file.
 
@@ -185,9 +179,9 @@ Options:
 EOF
 }
 
-encrypt-unset_command() {
+encrypt-unmark_command() {
   if [ $# -lt 1 ]; then
-    encrypt-unset_help_command
+    encrypt-unmark_help_command
     exit 0
   fi
 
@@ -195,85 +189,41 @@ encrypt-unset_command() {
   src="$(realpath --relative-to "$git_root" -e "$1")"
   attribute=$(generate_attribute "$src")
   [ -f "$git_root/.gitattributes" ] || touch "$git_root/.gitattributes"
-  sed -i "#^${attribute}$#d" "$git_root/.gitattributes"
+  set -x
+  sed -i "\#^${attribute}\$#d" "$git_root/.gitattributes"
   $GIT_BIN add "$git_root/.gitattributes"
 }
 
-gpg-encrypt_help_command() {
-  cat <<EOF
-Usage: $TRK_BIN gpg encrypt <file>
-
-Encrypt a file with GPG. See set-gpg-args to override GPG arguments.
-
-Options:
-
-  -f, --force  Force the command
-EOF
+encrypt-key_command() {
+  cat "$PASSPHRASE_FILE"
 }
 
-gpg-encrypt_command() {
-  if [ $# -lt 1 ]; then
-    gpg-encrypt_help_command
-    exit 0
-  fi
-
-  args="$($GIT_BIN config trk.gpg-args)"
-  src="$1"
-  dst="$src.gpg"
-  shift
-  if [ -f "$dst" ]; then
-    if [ "$FORCE" != true ]; then
-      ask_file_overwrite "$dst" || exit 1
-    fi
-    rm -f "$dst"
-  fi
-  $GPG_BIN $args --symmetric "$@" --output "$dst" "$src"
+generate_salt() {
+  cat "$PASSPHRASE_FILE" | openssl dgst -hmac "$1" -sha256 | tr -d '\r\n' | tail -c16
 }
 
-gpg-decrypt_help_command() {
-  cat <<EOF
-Usage: $TRK_BIN gpg decrypt <file>
-
-Decrypt a file with GPG. See set-gpg-args to override GPG arguments.
-
-Options:
-
-  -f, --force  Force the command
-EOF
+clean_command() {
+  salt=$(generate_salt "${1}")
+  openssl enc -e $OPENSSL_DEFAULT_ARGS -pass "file:$PASSPHRASE_FILE" -S "$salt"
 }
 
-gpg-decrypt_command() {
-  if [ $# -lt 1 ]; then
-    gpg-decrypt_help_command
-    exit 0
-  fi
-
-  args="$($GIT_BIN config trk.gpg-args)"
-  src="$1"
-  dst="${src%.gpg}"
-  shift
-  if [ -f "$dst" ]; then
-    if [ "$FORCE" != true ]; then
-      ask_file_overwrite "$dst" || exit 1
-    fi
-    rm -f "$dst"
-  fi
-  $GPG_BIN $args --decrypt "$@" --output "$dst" "$src"
+smudge_command() {
+  salt=$(generate_salt "${1}")
+  openssl enc -d $OPENSSL_DEFAULT_ARGS -pass "file:$PASSPHRASE_FILE" -S "$salt"
 }
 
-gpg-get-args_command() {
-  $GIT_BIN config trk.gpg-args
+openssl-get-args_command() {
+  $GIT_BIN config trk.openssl-args
 }
 
-gpg-reset-args_command() {
-  $GIT_BIN config --local trk.gpg-args '--batch --yes --verbose'
+openssl-reset-args_command() {
+  $GIT_BIN config --local trk.openssl-args "$OPENSSL_DEFAULT_ARGS"
 }
 
-gpg-set-args_command() {
+openssl-set-args_command() {
   args="$@"
-  $GIT_BIN config --local trk.gpg-args "$args"
+  $GIT_BIN config --local trk.openssl-args "$args"
 }
-
 
 # Hooks
 
@@ -292,11 +242,11 @@ configure_repo() {
   $GIT_BIN config --local status.showUntrackedFiles no
   $GIT_BIN config --local trk.managed true
 
-  $GIT_BIN config --local filter.crypt.clean "base64 -w0"
-  $GIT_BIN config --local filter.crypt.smudge "base64 -d"
   $GIT_BIN config --local filter.crypt.required true
+  $GIT_BIN config --local filter.crypt.clean "$TRK_BIN clean %f"
+  $GIT_BIN config --local filter.crypt.smudge "$TRK_BIN smudge %f"
   $GIT_BIN config --local diff.crypt.textconv cat
-  gpg-reset-args_command
+  openssl-reset-args_command
 }
 
 ensure_dir() {
@@ -305,7 +255,7 @@ ensure_dir() {
 
 ensure_bins() {
   command -v $GIT_BIN >/dev/null 2>&1 || { echo >&2 "Git is required but not installed. Aborting."; exit 1; }
-  command -v $GPG_BIN >/dev/null 2>&1 || { echo >&2 "GPG is required but not installed. Aborting."; exit 1; }
+  command -v $OPENSSL_BIN >/dev/null 2>&1 || { echo >&2 "OpenSSL is required but not installed. Aborting."; exit 1; }
 }
 
 set_env() {
@@ -327,7 +277,7 @@ main() {
   shift
 
   case "$COMMAND" in
-    gpg|encrypt)
+    openssl|encrypt)
       SUBCOMMAND="$1"
       shift
       COMMAND="$COMMAND-$SUBCOMMAND"
