@@ -13,6 +13,8 @@ OPENSSL_DEFAULT_ARGS="-aes-256-cbc -md sha256 -pbkdf2"
 
 YES_PATTERN="^[Yy]$"
 
+# Help messages
+
 help_command() {
   cat <<EOF
 Usage: $TRK_BIN <command> [options]
@@ -44,19 +46,80 @@ Files:
 EOF
 }
 
-# Git commands
-
 clone_help_command() {
   cat <<EOF
-Usage: $TRK_BIN clone <repository> [options]
+Usage: $TRK_BIN clone <worktree> <git options>...
 
-Clone a repository into the current worktree.
+Clone a repository for the given worktree.
 
 Options:
 
   -f, --force  Force the command
 EOF
 }
+
+init_help_command() {
+  cat <<EOF
+Usage: $TRK_BIN init <worktree>
+
+Initialize a new repository for the given worktree.
+
+Options:
+
+  -f, --force  Force the command
+EOF
+}
+
+mark_help_command() {
+  cat <<EOF
+Usage: $TRK_BIN mark <file>
+
+Mark a file to be encrypted when committed.
+
+Options:
+
+  -f, --force  Force the command
+EOF
+}
+
+unmark_help_command() {
+  cat <<EOF
+Usage: $TRK_BIN unmark <file>
+
+Remove encryption mark from a file.
+
+Options:
+
+  -f, --force  Force the command
+EOF
+}
+
+config_import_help_command() {
+  cat <<EOF
+Usage: $TRK_BIN config import <file>
+
+Import a git configuration from a file.
+It imports the passphrase and OpenSSL arguments if they exist.
+EOF
+}
+
+passphrase_import_help_command() {
+  cat <<EOF
+Usage: $TRK_BIN passphrase import <file>
+
+Import an encryption key from a file.
+EOF
+}
+
+openssl_set_args_help_command() {
+  cat <<EOF
+Usage: $TRK_BIN openssl set-args <args>...
+
+Set OpenSSL arguments for encryption and decryption.
+EOF
+}
+
+# Git commands
 
 # Clone a repository with a specific worktree
 # Worktree is left unchanged if there are local changes
@@ -91,6 +154,7 @@ clone_command() {
   modified_files="$($GIT_BIN ls-files --modified)"
   if [ -n "$modified_files" ]; then
     cat <<EOF
+
 Local files differ from the cloned repository.
 Review and apply the changes manually.
 
@@ -100,18 +164,6 @@ Review and apply the changes manually.
 EOF
     exit 1
   fi
-}
-
-init_help_command() {
-  cat <<EOF
-Usage: $TRK_BIN init <worktree> [options]
-
-Initialize a new repository for the given worktree.
-
-Options:
-
-  -f, --force  Force the command
-EOF
 }
 
 # Initialize a new repository with a specific worktree
@@ -143,7 +195,7 @@ init_command() {
 # It imports the passphrase and OpenSSL arguments if they exist
 config-import_command() {
   if [ $# -lt 1 ]; then
-    echo "Usage: $TRK_BIN config import <file>"
+    config_import_help_command
     exit 0
   fi
 
@@ -166,18 +218,6 @@ generate_attribute() {
   echo "$1 filter=crypt diff=crypt merge=crypt"
 }
 
-mark_help_command() {
-  cat <<EOF
-Usage: $TRK_BIN mark <file>
-
-Mark a file to be encrypted when committed.
-
-Options:
-
-  -f, --force  Force the command
-EOF
-}
-
 # Mark a file to be encrypted when committed
 mark_command() {
   if [ $# -lt 1 ]; then
@@ -198,18 +238,6 @@ mark_command() {
     echo "$attribute" >> "$git_root/.gitattributes"
   fi
   $GIT_BIN add "$git_root/.gitattributes"
-}
-
-unmark_help_command() {
-  cat <<EOF
-Usage: $TRK_BIN unmark <file>
-
-Remove encryption mark from a file.
-
-Options:
-
-  -f, --force  Force the command
-EOF
 }
 
 # Remove encryption mark from a file
@@ -254,7 +282,7 @@ passphrase-get_command() {
 # Import a passphrase from a file
 passphrase-import_command() {
   if [ $# -lt 1 ]; then
-    echo "Usage: $TRK_BIN passphrase import <file>"
+    passphrase_import_help_command
     exit 0
   fi
 
@@ -305,6 +333,11 @@ openssl-reset-args_command() {
 
 # Set OpenSSL arguments used for encryption and decryption
 openssl-set-args_command() {
+  if [ $# -lt 1 ]; then
+    openssl_set_args_help_command
+    exit 0
+  fi
+
   # It is required to escape the arguments here first
   args="$@"
   $GIT_BIN config --local trk.openssl-args "$args"
@@ -436,7 +469,11 @@ main() {
 
   case "$COMMAND" in
     config|git|openssl|passphrase)
-      SUBCOMMAND="$1"
+      SUBCOMMAND="${1-}"
+      if [ -z "$SUBCOMMAND" ]; then
+        help_command
+        exit 0
+      fi
       shift
       COMMAND="$COMMAND-$SUBCOMMAND"
       ;;
