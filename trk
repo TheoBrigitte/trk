@@ -23,9 +23,9 @@ Any git command can be used as a <command>.
 Commands:
   init                Initialize a new repository with a specific worktree
   clone               Clone a repository with a specific worktree
-  encrypt mark        Mark a file to be encrypted when committed
-  encrypt unmark      Remove encryption mark from a file
-  encrypt key         Get the encryption key
+  mark                Mark a file to be encrypted when committed
+  unmark              Remove encryption mark from a file
+  export-key          Get the encryption key
   openssl set-args    Set OpenSSL arguments for encryption and decryption
   openssl get-args    Get OpenSSL arguments for encryption and decryption
   openssl reset-args  Reset OpenSSL arguments to default
@@ -34,7 +34,6 @@ Commands:
 Options:
 
   -f, --force  Force the command
-  -h, --help   Show this help message
 
 Files:
   Repository: $GIT_REPO_DIR
@@ -137,9 +136,9 @@ generate_attribute() {
   echo "$src filter=crypt diff=crypt"
 }
 
-encrypt-mark_help_command() {
+mark_help_command() {
   cat <<EOF
-Usage: $TRK_BIN encrypt mark <file>
+Usage: $TRK_BIN mark <file>
 
 Mark a file to be encrypted when committed.
 
@@ -149,9 +148,9 @@ Options:
 EOF
 }
 
-encrypt-mark_command() {
+mark_command() {
   if [ $# -lt 1 ]; then
-    encrypt-mark_help_command
+    mark_help_command
     exit 0
   fi
 
@@ -167,9 +166,9 @@ encrypt-mark_command() {
   $GIT_BIN add "$git_root/.gitattributes"
 }
 
-encrypt-unmark_help_command() {
+unmark_help_command() {
   cat <<EOF
-Usage: $TRK_BIN encrypt unmark <file>
+Usage: $TRK_BIN unmark <file>
 
 Remove encryption mark from a file.
 
@@ -179,9 +178,9 @@ Options:
 EOF
 }
 
-encrypt-unmark_command() {
+unmark_command() {
   if [ $# -lt 1 ]; then
-    encrypt-unmark_help_command
+    unmark_help_command
     exit 0
   fi
 
@@ -194,7 +193,7 @@ encrypt-unmark_command() {
   $GIT_BIN add "$git_root/.gitattributes"
 }
 
-encrypt-key_command() {
+export-key_command() {
   cat "$PASSPHRASE_FILE"
 }
 
@@ -277,7 +276,7 @@ main() {
   shift
 
   case "$COMMAND" in
-    openssl|encrypt)
+    openssl|git)
       SUBCOMMAND="$1"
       shift
       COMMAND="$COMMAND-$SUBCOMMAND"
