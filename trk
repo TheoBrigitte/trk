@@ -55,6 +55,8 @@ Options:
 EOF
 }
 
+# Clone a repository with a specific worktree
+# Worktree is left unchanged if there are local changes
 clone_command() {
   if [ $# -lt 2 ]; then
     clone_help_command
@@ -75,9 +77,14 @@ clone_command() {
 
   echo "Cloning repository with worktree $worktree"
 
+  # Clone the repository
   $GIT_BIN clone --no-checkout --bare "$@" "$GIT_DIR"
   configure_repo "$worktree"
+
+  # Get changes from the cloned repository into the index
   $GIT_BIN reset --mixed --quiet
+
+  # Check if there are local changes
   modified_files="$($GIT_BIN ls-files --modified)"
   if [ -n "$modified_files" ]; then
     cat <<EOF
@@ -86,7 +93,7 @@ Review and apply the changes manually.
 
   $TRK_BIN status
   $TRK_BIN checkout -- <file> # keep remote changes
-  $TRK_BIN add <file> # keep local changes
+  $TRK_BIN add <file>         # keep local changes
 EOF
     exit 1
   fi
@@ -104,6 +111,8 @@ Options:
 EOF
 }
 
+# Initialize a new repository with a specific worktree
+# Encryption passphrase is generated and stored in a file
 init_command() {
 	if [ $# -lt 1 ]; then
     init_help_command
@@ -122,18 +131,22 @@ init_command() {
   worktree="$(realpath -e "$1")"
   echo "Initializing repository for worktree $worktree"
 
+  # Initialize the repository
   $GIT_BIN init --bare
   configure_repo "$worktree"
 
   mkdir -p "$GIT_REPO_TRK_DIR"
+
+  # Generate encryption passphrase
   < /dev/urandom tr -cd "[:print:]" | head -c 32 > "$PASSPHRASE_FILE"
 }
 
 # Encryption
 
+# Generate a git attribute for a file
+# This attribute is used to mark files that should be encrypted
 generate_attribute() {
-  src="$1"
-  echo "$src filter=crypt diff=crypt merge=crypt"
+  echo "$1 filter=crypt diff=crypt merge=crypt"
 }
 
 mark_help_command() {
@@ -148,6 +161,7 @@ Options:
 EOF
 }
 
+# Mark a file to be encrypted when committed
 mark_command() {
   if [ $# -lt 1 ]; then
     mark_help_command
@@ -155,9 +169,12 @@ mark_command() {
   fi
 
   git_root="$($GIT_BIN rev-parse --show-toplevel)"
+  # Create .gitattributes file if it doesn't exist
+  [ -f "$git_root/.gitattributes" ] || touch "$git_root/.gitattributes"
+
+  # Add the git attribute for the file
   src="$(realpath --relative-to "$git_root" -e "$1")"
   attribute=$(generate_attribute "$src")
-  [ -f "$git_root/.gitattributes" ] || touch "$git_root/.gitattributes"
   if grep -qE "^${attribute}$" "$git_root/.gitattributes" >/dev/null; then
     echo "$1 is already marked for encryption."
   else
@@ -178,6 +195,7 @@ Options:
 EOF
 }
 
+# Remove encryption mark from a file
 unmark_command() {
   if [ $# -lt 1 ]; then
     unmark_help_command
@@ -185,42 +203,55 @@ unmark_command() {
   fi
 
   git_root="$($GIT_BIN rev-parse --show-toplevel)"
+  # Create .gitattributes file if it doesn't exist
+  [ -f "$git_root/.gitattributes" ] || touch "$git_root/.gitattributes"
+
+  # Remove the git attribute for the file
   src="$(realpath --relative-to "$git_root" -e "$1")"
   attribute=$(generate_attribute "$src")
-  [ -f "$git_root/.gitattributes" ] || touch "$git_root/.gitattributes"
   set -x
   sed -i "\#^${attribute}\$#d" "$git_root/.gitattributes"
   $GIT_BIN add "$git_root/.gitattributes"
 }
 
+# Display the encryption key
 export-key_command() {
   cat "$PASSPHRASE_FILE"
 }
 
+# Get OpenSSL arguments used for encryption and decryption
 openssl-get-args_command() {
   $GIT_BIN config trk.openssl-args
 }
 
+# Reset OpenSSL arguments to default
 openssl-reset-args_command() {
   $GIT_BIN config --local trk.openssl-args "$OPENSSL_DEFAULT_ARGS"
 }
 
+# Set OpenSSL arguments used for encryption and decryption
 openssl-set-args_command() {
+  # It is required to escape the arguments here first
   args="$@"
   $GIT_BIN config --local trk.openssl-args "$args"
 }
 
 # Internal commands for git filters
 
+# Generate a salt for encryption
+# In order for clean/smudge filters to work correctly, the process must be idempotent.
+# Therefore the salt is unique per file and is generated using the passphrase and the filename.
 generate_salt() {
   cat "$PASSPHRASE_FILE" | openssl dgst -hmac "$1" -sha256 | tr -d '\r\n' | tail -c16
 }
 
+# Encrypt a file use OpenSSL
 git-encrypt_command() {
   salt=$(generate_salt "${1}")
   openssl enc -e $OPENSSL_DEFAULT_ARGS -pass "file:$PASSPHRASE_FILE" -S "$salt"
 }
 
+# Decrypt a file use OpenSSL
 git-decrypt_command() {
   salt=$(generate_salt "${1}")
   inputfile="$(mktemp -t trk-encrypt.XXXXXXXXXX)"
@@ -229,10 +260,14 @@ git-decrypt_command() {
   if tee "$inputfile"|openssl enc -d $OPENSSL_DEFAULT_ARGS -pass "file:$PASSPHRASE_FILE" -S "$salt" -out "$outputfile" 2>/dev/null; then
     cat "$outputfile"
   else
+    # There are cases where this function receive an unencrypted file
+    # For instance when a merge conflict occurs, the merge conflict file is passed to this function
     cat "$inputfile"
   fi
 }
 
+# Merge a file using git merge-file
+# It does so by decrypting the files, performing the merge, and encrypting the result back
 git-merge_command() {
   base=$1     # Base file
   current=$2  # Current branch version
@@ -274,6 +309,7 @@ add_command_post() {
 
 # Helpers
 
+# Configure the git repository with worktree, encryption filters, and other settings
 configure_repo() {
   worktree="$1"
   $GIT_BIN config --local core.bare false
@@ -289,15 +325,23 @@ configure_repo() {
   openssl-reset-args_command
 }
 
+# Ensure that the required directories are available
 ensure_dir() {
   [ -d "$SHARE_DIR" ] || mkdir -p "$SHARE_DIR"
+  if [ -d "$GIT_REPO_DIR" ]; then
+    [ -d "$GIT_REPO_TRK_DIR" ] || mkdir -p "$GIT_REPO_TRK_DIR"
+    [ -f "$PASSPHRASE_FILE" ] || { echo >&2 "Passphrase file not found. Aborting."; exit 1; }
+  fi
 }
 
+# Ensure that the required binaries are available
 ensure_bins() {
   command -v $GIT_BIN >/dev/null 2>&1 || { echo >&2 "Git is required but not installed. Aborting."; exit 1; }
   command -v $OPENSSL_BIN >/dev/null 2>&1 || { echo >&2 "OpenSSL is required but not installed. Aborting."; exit 1; }
 }
 
+# Set the environment variables for the git repository
+# The GIT_DIR environment variable is used by git to determine the repository location
 set_env() {
   export GIT_DIR="$GIT_REPO_DIR"
 }
@@ -307,12 +351,13 @@ main() {
   ensure_dir
   ensure_bins
 
-  # handle no arguments case
+  # Handle no arguments case
   if [ $# -lt 1 ]; then
     help_command
     exit 0
   fi
 
+  # Handle commands and subcommands
   COMMAND="$1"
   shift
 
@@ -324,6 +369,7 @@ main() {
       ;;
   esac
 
+  # Handle options
   FORCE=false
 
   args=()
@@ -342,6 +388,7 @@ main() {
   done
 
 
+  # Execute the command
   if declare -F "${COMMAND}_command" &>/dev/null; then
     "${COMMAND}_command" "${args[@]}"
   else
