@@ -193,7 +193,7 @@ init_command() {
 
 # Import a git configuration from a file
 # It imports the passphrase and OpenSSL arguments if they exist
-config-import_command() {
+config_import_command() {
   if [ $# -lt 1 ]; then
     config_import_help_command
     exit 0
@@ -261,7 +261,7 @@ unmark_command() {
 
 # Generate a passphrase for encryption
 # Ask for confirmation if a passphrase already exists
-passphrase-generate_command() {
+passphrase_generate_command() {
   current_passphrase="$($GIT_BIN config --local trk.passphrase)"
   if [ -n "$current_passphrase" ]; then
     echo "Passphrase already exists."
@@ -275,12 +275,12 @@ passphrase-generate_command() {
 }
 
 # Display the passphrase
-passphrase-get_command() {
+passphrase_get_command() {
   passphrase_get
 }
 
 # Import a passphrase from a file
-passphrase-import_command() {
+passphrase_import_command() {
   if [ $# -lt 1 ]; then
     passphrase_import_help_command
     exit 0
@@ -322,17 +322,17 @@ passphrase_get() {
 }
 
 # Get OpenSSL arguments used for encryption and decryption
-openssl-get-args_command() {
+openssl_get-args_command() {
   $GIT_BIN config trk.openssl-args
 }
 
 # Reset OpenSSL arguments to default
-openssl-reset-args_command() {
+openssl_reset-args_command() {
   $GIT_BIN config --local trk.openssl-args "$OPENSSL_DEFAULT_ARGS"
 }
 
 # Set OpenSSL arguments used for encryption and decryption
-openssl-set-args_command() {
+openssl_set-args_command() {
   if [ $# -lt 1 ]; then
     openssl_set_args_help_command
     exit 0
@@ -353,14 +353,14 @@ generate_salt() {
 }
 
 # Encrypt a file use OpenSSL
-git-encrypt_command() {
+git_encrypt_command() {
   passphrase="$(passphrase_get)"
   salt=$(generate_salt "${passphrase}" "${1}")
   PASSPHRASE="$passphrase" $OPENSSL_BIN enc -e $OPENSSL_DEFAULT_ARGS -pass "env:PASSPHRASE" -S "$salt"
 }
 
 # Decrypt a file use OpenSSL
-git-decrypt_command() {
+git_decrypt_command() {
   passphrase="$(passphrase_get)"
   salt=$(generate_salt "${passphrase}" "${1}")
   inputfile="$(mktemp -t trk-encrypt.XXXXXXXXXX)"
@@ -377,7 +377,7 @@ git-decrypt_command() {
 
 # Merge a file using git merge-file
 # It does so by decrypting the files, performing the merge, and encrypting the result back
-git-merge_command() {
+git_merge_command() {
   base=$1     # Base file
   current=$2  # Current branch version
   other=$3    # Other branch version
@@ -390,9 +390,9 @@ git-merge_command() {
   trap 'rm -f "$base_temp" "$current_temp" "$other_temp"' EXIT
 
   # Decrypt files
-  cat "$base"    | git-decrypt_command "$dest" > "$base_temp"
-  cat "$current" | git-decrypt_command "$dest" > "$current_temp"
-  cat "$other"   | git-decrypt_command "$dest" > "$other_temp"
+  cat "$base"    | git_decrypt_command "$dest" > "$base_temp"
+  cat "$current" | git_decrypt_command "$dest" > "$current_temp"
+  cat "$other"   | git_decrypt_command "$dest" > "$other_temp"
 
   cp "$base_temp"    "$base"
   cp "$current_temp" "$current"
@@ -404,7 +404,7 @@ git-merge_command() {
   $GIT_BIN merge-file --marker-size="$marker" -L HEAD -L BASE -L "$other_branch" "$current" "$base" "$other"
 
   # Encrypt merged result back
-  cat "$current" | git-encrypt_command "$dest" > "$current_temp"
+  cat "$current" | git_encrypt_command "$dest" > "$current_temp"
   cp "$current_temp" "$current"
 }
 
@@ -431,7 +431,7 @@ configure_repo() {
   $GIT_BIN config --local filter.crypt.smudge "$TRK_BIN git decrypt %f"
   $GIT_BIN config --local merge.crypt.driver  "$TRK_BIN git merge %O %A %B %L %P"
   $GIT_BIN config --local diff.crypt.textconv cat
-  openssl-reset-args_command
+  openssl_reset-args_command
   passphrase_generate
 }
 
@@ -452,6 +452,12 @@ set_env() {
   export GIT_DIR="$GIT_REPO_DIR"
 }
 
+join_by() {
+  local IFS="$1"
+  shift
+  echo "$*"
+}
+
 main() {
   set_env
   ensure_dir
@@ -464,20 +470,21 @@ main() {
   fi
 
   # Handle commands and subcommands
-  COMMAND="$1"
+  commands=("$1")
   shift
 
-  case "$COMMAND" in
+  case "${commands[0]}" in
     config|git|openssl|passphrase)
-      SUBCOMMAND="${1-}"
-      if [ -z "$SUBCOMMAND" ]; then
+      subcommand="${1-}"
+      if [ -z "$subcommand" ]; then
         help_command
         exit 0
       fi
       shift
-      COMMAND="$COMMAND-$SUBCOMMAND"
+      commands+=("$subcommand")
       ;;
   esac
+
 
   # Handle options
   FORCE=false
@@ -499,10 +506,12 @@ main() {
 
 
   # Execute the command
-  if declare -F "${COMMAND}_command" &>/dev/null; then
-    "${COMMAND}_command" "${args[@]}"
+  # Fallback to the original git command if the command is not found
+  trk_command="$(join_by _ "${commands[@]}")_command"
+  if declare -F "$trk_command" &>/dev/null; then
+    "$trk_command" "${args[@]}"
   else
-    $GIT_BIN "$COMMAND" "${args[@]}"
+    $GIT_BIN "${commands[@]}" "${args[@]}"
   fi
 
   #if declare -F "${COMMAND}_command_post" &>/dev/null; then
