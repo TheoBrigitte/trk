@@ -266,7 +266,7 @@ unmark_command() {
 # Ask for confirmation if a passphrase already exists
 passphrase_generate_command() {
   current_passphrase="$($GIT_BIN config --local trk.passphrase)"
-  if [ -n "$current_passphrase" ]; then
+  if ! $FORCE && [ -n "$current_passphrase" ]; then
     echo "Passphrase already exists."
     read -p "Do you want to generate a new passphrase? [y/N] " -n 1 -r
     echo
@@ -295,7 +295,7 @@ passphrase_import_command() {
     exit 1
   fi
 
-  if [ -n "$($GIT_BIN config --local trk.passphrase)" ]; then
+  if ! $FORCE && [ -n "$($GIT_BIN config --local trk.passphrase)" ]; then
     echo "Passphrase already exists."
     read -p "Do you want to overwrite the passphrase? [y/N] " -n 1 -r
     echo
@@ -304,7 +304,7 @@ passphrase_import_command() {
     fi
   fi
 
-  if [ $(echo "$passphrase" | wc -c) -lt 10 ]; then
+  if ! $FORCE && [ $(echo "$passphrase" | wc -c) -lt 10 ]; then
     echo "Weak passphrase."
     read -p "Do you want to use this passphrase? [y/N] " -n 1 -r
     echo
