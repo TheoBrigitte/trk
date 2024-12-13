@@ -27,7 +27,8 @@ Commands:
   clone                Clone a repository with a specific worktree
   mark                 Mark a file to be encrypted when committed
   unmark               Remove encryption mark from a file
-  config import        Import a git configuration from a file
+  config export        Export configuration
+  config import        Import configuration from a file
   passphrase get       Get the encryption key
   passphrase generate  Generate a new encryption key
   passphrase import    Import an encryption key from a file
@@ -191,23 +192,25 @@ init_command() {
   configure_repo "$worktree"
 }
 
-# Import a git configuration from a file
-# It imports the passphrase and OpenSSL arguments if they exist
+# Export configuration
+config_export_command() {
+  $GIT_BIN config get --local --all --show-names --regexp '^trk\.'
+}
+
+# Import configuration from a file
 config_import_command() {
   if [ $# -lt 1 ]; then
     config_import_help_command
     exit 0
   fi
 
-  passphrase="$(git config -f "$1" trk.passphrase)"
-  if [ -n "$passphrase" ]; then
-    $GIT_BIN config --local trk.passphrase "$passphrase"
-  fi
-
-  openssl_args="$(git config -f "$1" trk.openssl-args)"
-  if [ -n "$openssl_args" ]; then
-    $GIT_BIN config --local trk.openssl-args "$openssl_args"
-  fi
+  exec 6< "$1"
+  while read <&6 line; do
+    key=$(echo "$line" | cut -sd' ' -f1)
+    value=$(echo "$line" | cut -sd' ' -f2-)
+    $GIT_BIN config --local "$key" "$value"
+  done
+  exec 6<&-
 }
 
 # Encryption
