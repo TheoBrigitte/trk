@@ -133,7 +133,7 @@ init_command() {
 
 generate_attribute() {
   src="$1"
-  echo "$src filter=crypt diff=crypt"
+  echo "$src filter=crypt diff=crypt merge=crypt"
 }
 
 mark_help_command() {
@@ -197,20 +197,6 @@ export-key_command() {
   cat "$PASSPHRASE_FILE"
 }
 
-generate_salt() {
-  cat "$PASSPHRASE_FILE" | openssl dgst -hmac "$1" -sha256 | tr -d '\r\n' | tail -c16
-}
-
-clean_command() {
-  salt=$(generate_salt "${1}")
-  openssl enc -e $OPENSSL_DEFAULT_ARGS -pass "file:$PASSPHRASE_FILE" -S "$salt"
-}
-
-smudge_command() {
-  salt=$(generate_salt "${1}")
-  openssl enc -d $OPENSSL_DEFAULT_ARGS -pass "file:$PASSPHRASE_FILE" -S "$salt"
-}
-
 openssl-get-args_command() {
   $GIT_BIN config trk.openssl-args
 }
@@ -222,6 +208,60 @@ openssl-reset-args_command() {
 openssl-set-args_command() {
   args="$@"
   $GIT_BIN config --local trk.openssl-args "$args"
+}
+
+# Internal commands for git filters
+
+generate_salt() {
+  cat "$PASSPHRASE_FILE" | openssl dgst -hmac "$1" -sha256 | tr -d '\r\n' | tail -c16
+}
+
+git-encrypt_command() {
+  salt=$(generate_salt "${1}")
+  openssl enc -e $OPENSSL_DEFAULT_ARGS -pass "file:$PASSPHRASE_FILE" -S "$salt"
+}
+
+git-decrypt_command() {
+  salt=$(generate_salt "${1}")
+  inputfile="$(mktemp -t trk-encrypt.XXXXXXXXXX)"
+  outputfile="$(mktemp -t trk-encrypt.XXXXXXXXXX)"
+  trap 'rm -f "$inputfile"' EXIT
+  if tee "$inputfile"|openssl enc -d $OPENSSL_DEFAULT_ARGS -pass "file:$PASSPHRASE_FILE" -S "$salt" -out "$outputfile" 2>/dev/null; then
+    cat "$outputfile"
+  else
+    cat "$inputfile"
+  fi
+}
+
+git-merge_command() {
+  base=$1     # Base file
+  current=$2  # Current branch version
+  other=$3    # Other branch version
+  marker=$4   # Conflict marker size
+  dest=$5     # Destination file
+
+  base_temp="$(mktemp -t trk-merge.XXXXXXXXXX)"
+  current_temp="$(mktemp -t trk-merge.XXXXXXXXXX)"
+  other_temp="$(mktemp -t trk-merge.XXXXXXXXXX)"
+  trap 'rm -f "$base_temp" "$current_temp" "$other_temp"' EXIT
+
+  # Decrypt files
+  cat "$base"    | git-decrypt_command "$dest" > "$base_temp"
+  cat "$current" | git-decrypt_command "$dest" > "$current_temp"
+  cat "$other"   | git-decrypt_command "$dest" > "$other_temp"
+
+  cp "$base_temp"    "$base"
+  cp "$current_temp" "$current"
+  cp "$other_temp"   "$other"
+
+  other_branch=$(echo "$GIT_REFLOG_ACTION" | awk '{print $2}')
+
+  # Perform the merge on decrypted content
+  git merge-file --marker-size="$marker" -L HEAD -L BASE -L "$other_branch" "$current" "$base" "$other"
+
+  # Encrypt merged result back
+  cat "$current" | git-encrypt_command "$dest" > "$current_temp"
+  cp "$current_temp" "$current"
 }
 
 # Hooks
@@ -242,8 +282,9 @@ configure_repo() {
   $GIT_BIN config --local trk.managed true
 
   $GIT_BIN config --local filter.crypt.required true
-  $GIT_BIN config --local filter.crypt.clean "$TRK_BIN clean %f"
-  $GIT_BIN config --local filter.crypt.smudge "$TRK_BIN smudge %f"
+  $GIT_BIN config --local filter.crypt.clean  "$TRK_BIN git encrypt %f"
+  $GIT_BIN config --local filter.crypt.smudge "$TRK_BIN git decrypt %f"
+  $GIT_BIN config --local merge.crypt.driver  "$TRK_BIN git merge %O %A %B %L %P"
   $GIT_BIN config --local diff.crypt.textconv cat
   openssl-reset-args_command
 }
