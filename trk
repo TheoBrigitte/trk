@@ -8,10 +8,10 @@ OPENSSL_BIN="openssl"
 
 SHARE_DIR=~/.local/share/trk
 GIT_REPO_DIR="$SHARE_DIR/repo.git"
-GIT_REPO_TRK_DIR="$GIT_REPO_DIR/trk"
-PASSPHRASE_FILE="$GIT_REPO_TRK_DIR/passphrase"
 
 OPENSSL_DEFAULT_ARGS="-aes-256-cbc -md sha256 -pbkdf2"
+
+YES_PATTERN="^[Yy]$"
 
 help_command() {
   cat <<EOF
@@ -21,15 +21,18 @@ Git wrapper for managing repositories with specific worktrees.
 Any git command can be used as a <command>.
 
 Commands:
-  init                Initialize a new repository with a specific worktree
-  clone               Clone a repository with a specific worktree
-  mark                Mark a file to be encrypted when committed
-  unmark              Remove encryption mark from a file
-  export-key          Get the encryption key
-  openssl set-args    Set OpenSSL arguments for encryption and decryption
-  openssl get-args    Get OpenSSL arguments for encryption and decryption
-  openssl reset-args  Reset OpenSSL arguments to default
-  help                Show this help message
+  init                 Initialize a new repository with a specific worktree
+  clone                Clone a repository with a specific worktree
+  mark                 Mark a file to be encrypted when committed
+  unmark               Remove encryption mark from a file
+  config import        Import a git configuration from a file
+  passphrase get       Get the encryption key
+  passphrase generate  Generate a new encryption key
+  passphrase import    Import an encryption key from a file
+  openssl set-args     Set OpenSSL arguments for encryption and decryption
+  openssl get-args     Get OpenSSL arguments for encryption and decryption
+  openssl reset-args   Reset OpenSSL arguments to default
+  help                 Show this help message
 
 Options:
 
@@ -134,11 +137,25 @@ init_command() {
   # Initialize the repository
   $GIT_BIN init --bare
   configure_repo "$worktree"
+}
 
-  mkdir -p "$GIT_REPO_TRK_DIR"
+# Import a git configuration from a file
+# It imports the passphrase and OpenSSL arguments if they exist
+config-import_command() {
+  if [ $# -lt 1 ]; then
+    echo "Usage: $TRK_BIN config import <file>"
+    exit 0
+  fi
 
-  # Generate encryption passphrase
-  < /dev/urandom tr -cd "[:print:]" | head -c 32 > "$PASSPHRASE_FILE"
+  passphrase="$(git config -f "$1" trk.passphrase)"
+  if [ -n "$passphrase" ]; then
+    $GIT_BIN config --local trk.passphrase "$passphrase"
+  fi
+
+  openssl_args="$(git config -f "$1" trk.openssl-args)"
+  if [ -n "$openssl_args" ]; then
+    $GIT_BIN config --local trk.openssl-args "$openssl_args"
+  fi
 }
 
 # Encryption
@@ -214,9 +231,66 @@ unmark_command() {
   $GIT_BIN add "$git_root/.gitattributes"
 }
 
-# Display the encryption key
-export-key_command() {
-  cat "$PASSPHRASE_FILE"
+# Generate a passphrase for encryption
+# Ask for confirmation if a passphrase already exists
+passphrase-generate_command() {
+  current_passphrase="$($GIT_BIN config --local trk.passphrase)"
+  if [ -n "$current_passphrase" ]; then
+    echo "Passphrase already exists."
+    read -p "Do you want to generate a new passphrase? [y/N] " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ $YES_PATTERN ]]; then
+      exit 0
+    fi
+  fi
+  passphrase_generate
+}
+
+# Display the passphrase
+passphrase-get_command() {
+  passphrase_get
+}
+
+# Import a passphrase from a file
+passphrase-import_command() {
+  if [ $# -lt 1 ]; then
+    echo "Usage: $TRK_BIN passphrase import <file>"
+    exit 0
+  fi
+
+  passphrase="$(cat "$1")"
+  if [ -z "$passphrase" ]; then
+    echo "Passphrase file is empty."
+    exit 1
+  fi
+
+  if [ -n "$($GIT_BIN config --local trk.passphrase)" ]; then
+    echo "Passphrase already exists."
+    read -p "Do you want to overwrite the passphrase? [y/N] " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ $YES_PATTERN ]]; then
+      exit 0
+    fi
+  fi
+
+  if [ $(echo "$passphrase" | wc -c) -lt 10 ]; then
+    echo "Weak passphrase."
+    read -p "Do you want to use this passphrase? [y/N] " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ $YES_PATTERN ]]; then
+      exit 0
+    fi
+  fi
+
+  $GIT_BIN config --local trk.passphrase "$passphrase"
+}
+
+passphrase_generate() {
+  $GIT_BIN config --local trk.passphrase "$($OPENSSL_BIN rand -base64 32)"
+}
+
+passphrase_get() {
+  $GIT_BIN config --local trk.passphrase
 }
 
 # Get OpenSSL arguments used for encryption and decryption
@@ -242,22 +316,24 @@ openssl-set-args_command() {
 # In order for clean/smudge filters to work correctly, the process must be idempotent.
 # Therefore the salt is unique per file and is generated using the passphrase and the filename.
 generate_salt() {
-  cat "$PASSPHRASE_FILE" | $OPENSSL_BIN dgst -hmac "$1" -sha256 | tr -d '\r\n' | tail -c16
+  echo -n "$1" | $OPENSSL_BIN dgst -hmac "$2" -sha256 | tr -d '\r\n' | tail -c16
 }
 
 # Encrypt a file use OpenSSL
 git-encrypt_command() {
-  salt=$(generate_salt "${1}")
-  $OPENSSL_BIN enc -e $OPENSSL_DEFAULT_ARGS -pass "file:$PASSPHRASE_FILE" -S "$salt"
+  passphrase="$(passphrase_get)"
+  salt=$(generate_salt "${passphrase}" "${1}")
+  PASSPHRASE="$passphrase" $OPENSSL_BIN enc -e $OPENSSL_DEFAULT_ARGS -pass "env:PASSPHRASE" -S "$salt"
 }
 
 # Decrypt a file use OpenSSL
 git-decrypt_command() {
-  salt=$(generate_salt "${1}")
+  passphrase="$(passphrase_get)"
+  salt=$(generate_salt "${passphrase}" "${1}")
   inputfile="$(mktemp -t trk-encrypt.XXXXXXXXXX)"
   outputfile="$(mktemp -t trk-encrypt.XXXXXXXXXX)"
   trap 'rm -f "$inputfile"' EXIT
-  if tee "$inputfile" | $OPENSSL_BIN enc -d $OPENSSL_DEFAULT_ARGS -pass "file:$PASSPHRASE_FILE" -S "$salt" -out "$outputfile" 2>/dev/null; then
+  if tee "$inputfile" | PASSPHRASE="$passphrase" $OPENSSL_BIN enc -d $OPENSSL_DEFAULT_ARGS -pass "env:PASSPHRASE" -S "$salt" -out "$outputfile" 2>/dev/null; then
     cat "$outputfile"
   else
     # There are cases where this function receive an unencrypted file
@@ -323,15 +399,12 @@ configure_repo() {
   $GIT_BIN config --local merge.crypt.driver  "$TRK_BIN git merge %O %A %B %L %P"
   $GIT_BIN config --local diff.crypt.textconv cat
   openssl-reset-args_command
+  passphrase_generate
 }
 
 # Ensure that the required directories are available
 ensure_dir() {
   [ -d "$SHARE_DIR" ] || mkdir -p "$SHARE_DIR"
-  if [ -d "$GIT_REPO_DIR" ]; then
-    [ -d "$GIT_REPO_TRK_DIR" ] || mkdir -p "$GIT_REPO_TRK_DIR"
-    [ -f "$PASSPHRASE_FILE" ] || { echo >&2 "Passphrase file not found. Aborting."; exit 1; }
-  fi
 }
 
 # Ensure that the required binaries are available
@@ -362,7 +435,7 @@ main() {
   shift
 
   case "$COMMAND" in
-    openssl|git)
+    config|git|openssl|passphrase)
       SUBCOMMAND="$1"
       shift
       COMMAND="$COMMAND-$SUBCOMMAND"
