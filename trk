@@ -19,7 +19,8 @@ help_command() {
   cat <<EOF
 Usage: $TRK_BIN <command> [options]
 
-Git wrapper for managing repositories with specific worktrees.
+Git wrapper for managing a repository with specific worktree and encryption.
+
 Any git command can be used as a <command>.
 
 Commands:
