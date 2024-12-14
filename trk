@@ -146,7 +146,9 @@ clone_command() {
   echo "Cloning repository with worktree $worktree"
 
   # Clone the repository
-  $GIT_BIN clone --no-checkout --bare "$@" "$GIT_DIR"
+  temp_dir="$(mktemp -d -t trk-clone.XXXXXXXXXX)"
+  trap 'rm -rf "$temp_dir"' EXIT
+  $GIT_BIN clone --config core.sharedrepository=0600 --no-checkout --separate-git-dir="$GIT_REPO_DIR" "$@" "$temp_dir"
   configure_repo "$worktree"
 
   # Get changes from the cloned repository into the index
@@ -186,10 +188,13 @@ init_command() {
   fi
 
   worktree="$(realpath -e "$1")"
+  shift
   echo "Initializing repository for worktree $worktree"
 
   # Initialize the repository
-  $GIT_BIN init --bare
+  temp_dir="$(mktemp -d -t trk-init.XXXXXXXXXX)"
+  trap 'rm -rf "$temp_dir"' EXIT
+  $GIT_BIN init --shared=0600 "$temp_dir/repo" "$@"
   configure_repo "$worktree"
 }
 
