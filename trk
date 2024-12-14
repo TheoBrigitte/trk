@@ -16,6 +16,11 @@ YES_PATTERN="^[Yy]$"
 # Help messages
 
 help_command() {
+  repository="$GIT_REPO_DIR"
+  [ ! -d "$GIT_REPO_DIR" ] && repository="not set"
+
+  worktree="$($GIT_BIN config --default 'not set' core.worktree)"
+
   cat <<EOF
 Usage: $TRK_BIN <command> [options]
 
@@ -43,8 +48,8 @@ Options:
   -f, --force  Force the command
 
 Files:
-  Repository: $GIT_REPO_DIR
-  Worktree: $($GIT_BIN config core.worktree)
+  Repository: $repository
+  Worktree: $worktree
 EOF
 }
 
