@@ -162,7 +162,6 @@ clone_command() {
 Local files differ from the cloned repository.
 Review and apply the changes manually.
 
-  $TRK_BIN status
   $TRK_BIN checkout -- <file> # keep remote changes
   $TRK_BIN add <file>         # keep local changes
 EOF
