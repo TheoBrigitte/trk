@@ -370,9 +370,9 @@ git_encrypt_command() {
 git_decrypt_command() {
   passphrase="$(passphrase_get)"
   salt=$(generate_salt "${passphrase}" "${1}")
-  inputfile="$(mktemp -t trk-encrypt.XXXXXXXXXX)"
-  outputfile="$(mktemp -t trk-encrypt.XXXXXXXXXX)"
-  trap 'rm -f "$inputfile"' EXIT
+  inputfile="$(mktemp -t trk-decrypt.XXXXXXXXXX)"
+  outputfile="$(mktemp -t trk-decrypt.XXXXXXXXXX)"
+  trap 'rm -f "$inputfile" "$outputfile"' EXIT
   # shellcheck disable=SC2086
   if tee "$inputfile" | PASSPHRASE="$passphrase" $OPENSSL_BIN enc -d $OPENSSL_DEFAULT_ARGS -pass "env:PASSPHRASE" -S "$salt" -out "$outputfile" 2>/dev/null; then
     cat "$outputfile"
