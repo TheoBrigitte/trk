@@ -1,0 +1,654 @@
+#!/bin/bash
+
+set -eu
+
+TRK_BIN="trk"
+GIT_BIN="git"
+OPENSSL_BIN="openssl"
+
+SHARE_DIR=~/.local/share/trk
+SHARE_GIT_DIR="$SHARE_DIR/repo.git"
+
+OPENSSL_DEFAULT_ARGS="-aes-256-cbc -md sha256 -pbkdf2"
+
+YES_PATTERN="^[Yy]$"
+
+# Help messages
+
+help_command() {
+  repository="$($GIT_BIN rev-parse --git-dir 2>/dev/null || echo 'not set')"
+  worktree="$($GIT_BIN config --default 'not set' core.worktree)"
+
+  cat <<EOF
+Usage: $TRK_BIN <command> [options]
+
+Git wrapper for managing a repository and encrypting files.
+
+Any git command can be used as a <command>.
+
+Commands:
+  init                 Initialize a new repository
+  clone                Clone a repository
+  mark                 Mark a file or pattern to be encrypted when committed
+  unmark               Remove encryption mark
+  list encrypted       List all encrypted files
+  reencrypt            Reencrypt all encrypted files
+  config export        Export configuration
+  config import        Import configuration from a file
+  passphrase get       Get the encryption key
+  passphrase generate  Generate a new encryption key
+  passphrase import    Import an encryption key from a file
+  openssl set-args     Set OpenSSL arguments for encryption and decryption
+  openssl get-args     Get OpenSSL arguments for encryption and decryption
+  openssl reset-args   Reset OpenSSL arguments to default
+  help                 Show this help message
+
+Options:
+
+  -f, --force  Force the command
+
+Variables:
+  Repository: $repository
+  Worktree: $worktree
+EOF
+}
+
+clone_help_command() {
+  cat <<EOF
+Usage: $TRK_BIN clone [ --worktree <path> ] <git options>...
+
+Clone a repository
+
+Options:
+
+  --worktree <path>  Set the worktree path
+                     When using this option, the repository is globally available and cloned in $SHARE_GIT_DIR
+  -f, --force        Force the command
+EOF
+}
+
+init_help_command() {
+  cat <<EOF
+Usage: $TRK_BIN init [ --worktree <path> ] <git options>...
+
+Initialize a new repository
+
+Options:
+
+  --worktree <path>  Set the worktree path
+                     When using this option, the repository is globally available and created in $SHARE_GIT_DIR
+  -f, --force        Force the command
+EOF
+}
+
+mark_help_command() {
+  cat <<EOF
+Usage: $TRK_BIN mark <file or pattern>
+
+Mark a file or pattern to be encrypted when committed.
+
+Patterns need to be quoted to prevent shell expansion.
+Patterns are gitattributes patterns, similar to .gitignore.
+
+Options:
+
+  -f, --force  Force the command
+EOF
+}
+
+unmark_help_command() {
+  cat <<EOF
+Usage: $TRK_BIN unmark <file or pattern>
+
+Remove encryption mark
+
+Options:
+
+  -f, --force  Force the command
+EOF
+}
+
+config_import_help_command() {
+  cat <<EOF
+Usage: $TRK_BIN config import <file>
+
+Import a git configuration from a file.
+It imports the passphrase and OpenSSL arguments if they exist.
+EOF
+}
+
+passphrase_import_help_command() {
+  cat <<EOF
+Usage: $TRK_BIN passphrase import <file>
+
+Import an encryption key from a file.
+EOF
+}
+
+openssl_set_args_help_command() {
+  cat <<EOF
+Usage: $TRK_BIN openssl set-args <args>...
+
+Set OpenSSL arguments for encryption and decryption.
+EOF
+}
+
+# Git commands
+
+clone_command() {
+  if [ $# -eq 1 ] && [ "$1" = "--help" ]; then
+    clone_help_command
+    exit 0
+  fi
+
+  if [ -n "$WORKTREE" ]; then
+    clone_global "$@"
+  else
+    clone_normal "$@"
+  fi
+}
+
+# Clone a repository and configure it witk trk settings
+clone_normal() {
+  unset GIT_DIR
+  $GIT_BIN clone --no-checkout "$@"
+
+  repository="${@: -1}"
+  repository_no_git_suffix="${repository%.git}"
+  repository_basename="${repository_no_git_suffix##*/}"
+
+  cd "$repository_basename"
+  GIT_DIR="$($GIT_BIN rev-parse --git-dir)"
+  $GIT_BIN reset --mixed --quiet
+
+  configure_repo
+}
+
+# Clone a repository with a specific worktree
+# Worktree is left unchanged if there are local changes
+clone_global() {
+  if [ $# -lt 1 ]; then
+    clone_help_command
+    exit 0
+  fi
+
+  if [ -d "$SHARE_GIT_DIR" ]; then
+    if [ "$FORCE" = true ]; then
+      rm -rf "$SHARE_GIT_DIR"
+    else
+      echo "Repository already exists. Use -f to force."
+      exit 1
+    fi
+  fi
+
+  worktree="$(realpath -e "$WORKTREE")"
+
+  echo "Cloning repository with worktree $worktree"
+
+  # Clone the repository
+  # Use standard cloning procedure and remove the temporary directory afterward
+  # This is to avoid any --bare shenanigans
+  temp_dir="$(mktemp -d -t trk-clone.XXXXXXXXXX)"
+  trap 'rm -rf "$temp_dir"' EXIT
+  $GIT_BIN clone --config core.sharedrepository=0600 --no-checkout --separate-git-dir="$SHARE_GIT_DIR" "$@" "$temp_dir"
+  configure_repo
+  configure_repo_global "$worktree"
+
+  # Get changes from the cloned repository into the index
+  $GIT_BIN reset --mixed --quiet
+
+  # Check if there are local changes
+  modified_files="$($GIT_BIN ls-files --modified)"
+  if [ -n "$modified_files" ]; then
+    cat <<EOF
+
+Local files differ from the cloned repository.
+Review and apply the changes manually.
+
+$TRK_BIN checkout -- <file> # keep remote changes
+$TRK_BIN add <file>         # keep local changes
+EOF
+    exit 1
+  fi
+}
+
+# Initialize a new repository
+# Encryption passphrase is generated and stored git config
+init_command() {
+  if [ $# -eq 1 ] && [ "$1" = "--help" ]; then
+    init_help_command
+    exit 0
+  fi
+
+  if [ -n "$WORKTREE" ]; then
+    init_global "$@"
+  else
+    init_normal "$@"
+  fi
+}
+
+init_normal() {
+  unset GIT_DIR
+  $GIT_BIN init "$@"
+
+  # Change to the repository directory if not current directory
+  [ "$#" -gt 0 ] && cd "${@: -1}"
+
+  configure_repo
+}
+
+# Initialize a new repository with a specific worktree
+init_global() {
+  if [ -d "$SHARE_GIT_DIR" ]; then
+    if [ "$FORCE" = true ]; then
+      rm -rf "$SHARE_GIT_DIR"
+    else
+      echo "Repository already exists. Use -f to force."
+      exit 1
+    fi
+  fi
+
+  worktree="$(realpath -e "$WORKTREE")"
+  echo "Initializing repository for worktree $worktree"
+
+  # Initialize the repository
+  # Using the standard git init procedure and remove the temporary directory afterward
+  # This is to avoid any --bare shenanigans
+  # The git dir is set by GIT_DIR environment variable
+  temp_dir="$(mktemp -d -t trk-init.XXXXXXXXXX)"
+  trap 'rm -rf "$temp_dir"' EXIT
+  export GIT_DIR="$SHARE_GIT_DIR"
+  $GIT_BIN init --shared=0600 "$temp_dir/repo" "$@"
+  configure_repo
+  configure_repo_global "$worktree"
+}
+
+# Export configuration
+config_export_command() {
+  if is_git_before_2_46; then
+    $GIT_BIN config --get-regexp '^trk\.'
+  else
+    $GIT_BIN config --local --all --show-names --regexp '^trk\.'
+  fi
+}
+
+# Import configuration from a file
+config_import_command() {
+  if [ $# -lt 1 ]; then
+    config_import_help_command
+    exit 0
+  fi
+
+  exec 6< "$1"
+  while read -r <&6 line; do
+    key=$(echo "$line" | cut -sd' ' -f1)
+    value=$(echo "$line" | cut -sd' ' -f2-)
+    $GIT_BIN config --local "$key" "$value"
+  done
+  exec 6<&-
+
+  changes="$($GIT_BIN ls-files --deleted)"
+  if [ -n "$changes" ]; then
+    if ! $FORCE; then
+      read -p "Do you want to restore the deleted files? [y/N] " -n 1 -r
+      echo
+      if [[ ! $REPLY =~ $YES_PATTERN ]]; then
+        exit 0
+      fi
+    fi
+    $GIT_BIN ls-files --deleted | $GIT_BIN checkout --pathspec-from-file -
+  fi
+}
+
+# Encryption
+
+# List all encrypted files
+# This command lists all files currently encrypted in the repository
+list_encrypted_command() {
+  git -c core.quotePath=false ls-files | git -c core.quotePath=false check-attr --stdin filter | awk 'BEGIN { FS = ":" }; / crypt/{ print $1 }'
+}
+
+# Reencrypt all encrypted files
+# This command reencrypts all files currently encrypted in the repository
+# It is useful when the passphrase is changed
+reencrypt_command() {
+  # shellcheck disable=SC2207
+  IFS=$'\n' list=($(list_encrypted_command))
+  printf '"%s"\n' "${list[@]}" | xargs touch
+}
+
+# Generate a git attribute for a file
+# This attribute is used to mark files that should be encrypted
+generate_attribute() {
+  # Escape spaces in the path
+  # gitattributes uses [[:space:]] to represent spaces
+  # https://github.com/git/git/blob/8d8387116ae8c3e73f6184471f0c46edbd2c7601/Documentation/gitattributes.txt#L563-L564
+  escaped_path="${1//\ /[[:space:]]}"
+  echo "$escaped_path filter=crypt diff=crypt merge=crypt"
+}
+
+# Mark a file to be encrypted when committed
+mark_command() {
+  if [ $# -lt 1 ]; then
+    mark_help_command
+    exit 0
+  fi
+
+  git_root="$($GIT_BIN rev-parse --show-toplevel)"
+  # Create .gitattributes file if it doesn't exist
+  [ -f "$git_root/.gitattributes" ] || touch "$git_root/.gitattributes"
+
+  # Add the git attribute for the file
+  src="$(realpath --relative-to "$git_root" "$1")"
+  attribute=$(generate_attribute "$src")
+  escaped_attribute="${attribute//\*/\\*}"
+  match="$(sed -n "\#^${escaped_attribute}\$#p" "$git_root/.gitattributes")"
+  if [ -n "$match" ]; then
+    echo "$1 is already marked for encryption."
+  else
+    echo "$attribute" >> "$git_root/.gitattributes"
+  fi
+  $GIT_BIN add "$git_root/.gitattributes"
+}
+
+# Remove encryption mark from a file
+unmark_command() {
+  if [ $# -lt 1 ]; then
+    unmark_help_command
+    exit 0
+  fi
+
+  git_root="$($GIT_BIN rev-parse --show-toplevel)"
+  # Create .gitattributes file if it doesn't exist
+  [ -f "$git_root/.gitattributes" ] || touch "$git_root/.gitattributes"
+
+  # Remove the git attribute for the file
+  src="$(realpath --relative-to "$git_root" "$1")"
+  attribute=$(generate_attribute "$src")
+  escaped_attribute="${attribute//\*/\\*}"
+  sed -i "\#^${escaped_attribute}\$#d" "$git_root/.gitattributes"
+  $GIT_BIN add "$git_root/.gitattributes"
+}
+
+# Generate a passphrase for encryption
+# Ask for confirmation if a passphrase already exists
+passphrase_generate_command() {
+  current_passphrase="$($GIT_BIN config --local trk.passphrase)"
+  if ! $FORCE && [ -n "$current_passphrase" ]; then
+    echo "Passphrase already exists."
+    read -p "Do you want to generate a new passphrase? [y/N] " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ $YES_PATTERN ]]; then
+      exit 0
+    fi
+  fi
+  passphrase_generate
+
+  if ! $FORCE [ -n "$current_passphrase" ]; then
+    read -p "Do you want to re-encrypt all files? [y/N] " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ $YES_PATTERN ]]; then
+      exit 0
+    fi
+  fi
+  reencrypt_command
+}
+
+# Display the passphrase
+passphrase_get_command() {
+  passphrase_get
+}
+
+# Import a passphrase from a file
+passphrase_import_command() {
+  if [ $# -lt 1 ]; then
+    passphrase_import_help_command
+    exit 0
+  fi
+
+  passphrase="$(cat "$1")"
+  if [ -z "$passphrase" ]; then
+    echo "Passphrase file is empty."
+    exit 1
+  fi
+
+  if ! $FORCE && [ -n "$($GIT_BIN config --local trk.passphrase)" ]; then
+    echo "Passphrase already exists."
+    read -p "Do you want to overwrite the passphrase? [y/N] " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ $YES_PATTERN ]]; then
+      exit 0
+    fi
+  fi
+
+  if ! $FORCE && [ "${#passphrase}" -lt 10 ]; then
+    echo "Weak passphrase."
+    read -p "Do you want to use this passphrase? [y/N] " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ $YES_PATTERN ]]; then
+      exit 0
+    fi
+  fi
+
+  $GIT_BIN config --local trk.passphrase "$passphrase"
+}
+
+passphrase_generate() {
+  $GIT_BIN config --local trk.passphrase "$($OPENSSL_BIN rand -base64 32)"
+}
+
+passphrase_get() {
+  $GIT_BIN config --local trk.passphrase
+}
+
+# Get OpenSSL arguments used for encryption and decryption
+openssl_get-args_command() {
+  $GIT_BIN config --local trk.openssl-args
+}
+
+# Reset OpenSSL arguments to default
+openssl_reset-args_command() {
+  $GIT_BIN config --local trk.openssl-args "$OPENSSL_DEFAULT_ARGS"
+}
+
+# Set OpenSSL arguments used for encryption and decryption
+openssl_set-args_command() {
+  if [ $# -lt 1 ]; then
+    openssl_set_args_help_command
+    exit 0
+  fi
+
+  $GIT_BIN config --local trk.openssl-args "$*"
+}
+
+# Internal commands for git filters
+
+# Generate a salt for encryption
+# In order for clean/smudge filters to work correctly, the process must be idempotent.
+# Therefore the salt is unique per file and is generated using the passphrase and the filename.
+generate_salt() {
+  echo -n "$1" | $OPENSSL_BIN dgst -hmac "$2" -sha256 | tr -d '\r\n' | tail -c16
+}
+
+# Encrypt a file use OpenSSL
+git_encrypt_command() {
+  passphrase="$(passphrase_get)"
+  salt=$(generate_salt "${passphrase}" "${1}")
+  openssl_args="$(openssl_get-args_command)"
+
+  # shellcheck disable=SC2086
+  PASSPHRASE="$passphrase" $OPENSSL_BIN enc -e $openssl_args -pass "env:PASSPHRASE" -S "$salt"
+}
+
+# Decrypt a file use OpenSSL
+git_decrypt_command() {
+  passphrase="$(passphrase_get)"
+  salt=$(generate_salt "${passphrase}" "${1}")
+  openssl_args="$(openssl_get-args_command)"
+
+  inputfile="$(mktemp -t trk-decrypt.XXXXXXXXXX)"
+  outputfile="$(mktemp -t trk-decrypt.XXXXXXXXXX)"
+  trap 'rm -f "$inputfile" "$outputfile"' EXIT
+
+  # shellcheck disable=SC2086
+  if tee "$inputfile" | PASSPHRASE="$passphrase" $OPENSSL_BIN enc -d $openssl_args -pass "env:PASSPHRASE" -S "$salt" -out "$outputfile" 2>/dev/null; then
+    cat "$outputfile"
+  else
+    # There are cases where this function receive an unencrypted file
+    # For instance when a merge conflict occurs, the merge conflict file is passed to this function
+    cat "$inputfile"
+  fi
+}
+
+# Merge a file using git merge-file
+# It does so by decrypting the files, performing the merge, and encrypting the result back
+git_merge_command() {
+  base=$1     # Base file
+  current=$2  # Current branch version
+  other=$3    # Other branch version
+  marker=$4   # Conflict marker size
+  dest=$5     # Destination file
+
+  base_temp="$(mktemp -t trk-merge.XXXXXXXXXX)"
+  current_temp="$(mktemp -t trk-merge.XXXXXXXXXX)"
+  other_temp="$(mktemp -t trk-merge.XXXXXXXXXX)"
+  trap 'rm -f "$base_temp" "$current_temp" "$other_temp"' EXIT
+
+  # Decrypt files
+  git_decrypt_command "$dest" < "$base"    > "$base_temp"
+  git_decrypt_command "$dest" < "$current" > "$current_temp"
+  git_decrypt_command "$dest" < "$other"   > "$other_temp"
+
+  cp "$base_temp"    "$base"
+  cp "$current_temp" "$current"
+  cp "$other_temp"   "$other"
+
+  other_branch=$(echo "$GIT_REFLOG_ACTION" | awk '{print $2}')
+
+  # Perform the merge on decrypted content
+  $GIT_BIN merge-file --marker-size="$marker" -L HEAD -L BASE -L "$other_branch" "$current" "$base" "$other"
+
+  # Encrypt merged result back
+  git_encrypt_command "$dest" < "$current" > "$current_temp"
+  cp "$current_temp" "$current"
+}
+
+# Helpers
+
+# Detect if the git version is before 2.46
+# This is needed to handle the different behavior of `git config --get-regexp`
+is_git_before_2_46() {
+  version="$($GIT_BIN --version | awk '{print $3}')"
+  printf '%s\n' "$version" "2.46" | sort -C -V
+}
+
+# Configure the git repository with worktree, encryption filters, and other settings
+configure_repo() {
+  $GIT_BIN config --local core.bare false
+  $GIT_BIN config --local trk.managed true
+
+  $GIT_BIN config --local filter.crypt.required true
+  $GIT_BIN config --local filter.crypt.clean  "$TRK_BIN git encrypt %f"
+  $GIT_BIN config --local filter.crypt.smudge "$TRK_BIN git decrypt %f"
+  $GIT_BIN config --local merge.crypt.driver  "$TRK_BIN git merge %O %A %B %L %P"
+  $GIT_BIN config --local diff.crypt.textconv cat
+  openssl_reset-args_command
+  passphrase_generate
+}
+
+# Configure the git repository with worktree
+configure_repo_global() {
+  worktree="$1"
+  $GIT_BIN config --local core.worktree "$worktree"
+  $GIT_BIN config --local status.showUntrackedFiles no
+}
+
+# Ensure that the required directories are available
+ensure_dir() {
+  [ -d "$SHARE_DIR" ] || mkdir -p "$SHARE_DIR"
+}
+
+# Ensure that the required binaries are available
+ensure_bins() {
+  command -v $GIT_BIN >/dev/null 2>&1 || { echo >&2 "Git is required but not installed. Aborting."; exit 1; }
+  command -v $OPENSSL_BIN >/dev/null 2>&1 || { echo >&2 "OpenSSL is required but not installed. Aborting."; exit 1; }
+}
+
+# Set the environment variables for the git repository
+# The GIT_DIR environment variable is used by git to determine the git dir location
+set_env() {
+  if $GIT_BIN config --local trk.managed &> /dev/null; then
+    return
+  fi
+
+  export GIT_DIR="$SHARE_GIT_DIR"
+}
+
+join_by() {
+  local IFS="$1"
+  shift
+  echo "$*"
+}
+
+main() {
+  set_env
+  ensure_dir
+  ensure_bins
+
+  # Handle no arguments case
+  if [ $# -lt 1 ]; then
+    help_command
+    exit 0
+  fi
+
+  # Handle commands and subcommands
+  commands=("$1")
+  shift
+
+  case "${commands[0]}" in
+    config|git|list|openssl|passphrase)
+      subcommand="${1-}"
+      if [ -z "$subcommand" ]; then
+        help_command
+        exit 0
+      fi
+      shift
+      commands+=("$subcommand")
+      ;;
+  esac
+
+  # Execute the command
+  # Fallback to git command if the command is not found
+  trk_command="$(join_by _ "${commands[@]}")_command"
+  if declare -F "$trk_command" &>/dev/null; then
+    # Handle options
+    FORCE=false
+    WORKTREE=""
+
+    args=()
+    while [[ $# -gt 0 ]] ; do
+      case "$1" in
+        -f|--force)
+          FORCE=true
+          shift
+          continue
+          ;;
+        --worktree)
+          WORKTREE="$2"
+          shift 2
+          continue
+          ;;
+        *)
+          args+=("$1")
+          shift
+          ;;
+      esac
+    done
+
+    "$trk_command" "${args[@]}"
+  else
+    $GIT_BIN "${commands[@]}" "${@}"
+  fi
+}
+
+main "$@"
