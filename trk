@@ -494,12 +494,12 @@ main() {
     case "$1" in
       -f|--force)
         FORCE=true
-        shift 1
+        shift
         continue
         ;;
       *)
         args+=("$1")
-        shift 1
+        shift
         ;;
     esac
   done
