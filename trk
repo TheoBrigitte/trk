@@ -206,7 +206,7 @@ config_import_command() {
   fi
 
   exec 6< "$1"
-  while read <&6 line; do
+  while read -r <&6 line; do
     key=$(echo "$line" | cut -sd' ' -f1)
     value=$(echo "$line" | cut -sd' ' -f2-)
     $GIT_BIN config --local "$key" "$value"
@@ -305,7 +305,7 @@ passphrase_import_command() {
     fi
   fi
 
-  if ! $FORCE && [ $(echo "$passphrase" | wc -c) -lt 10 ]; then
+  if ! $FORCE && [ "${#passphrase}" -lt 10 ]; then
     echo "Weak passphrase."
     read -p "Do you want to use this passphrase? [y/N] " -n 1 -r
     echo
@@ -342,9 +342,7 @@ openssl_set-args_command() {
     exit 0
   fi
 
-  # It is required to escape the arguments here first
-  args="$@"
-  $GIT_BIN config --local trk.openssl-args "$args"
+  $GIT_BIN config --local trk.openssl-args "$*"
 }
 
 # Internal commands for git filters
@@ -360,6 +358,7 @@ generate_salt() {
 git_encrypt_command() {
   passphrase="$(passphrase_get)"
   salt=$(generate_salt "${passphrase}" "${1}")
+  # shellcheck disable=SC2086
   PASSPHRASE="$passphrase" $OPENSSL_BIN enc -e $OPENSSL_DEFAULT_ARGS -pass "env:PASSPHRASE" -S "$salt"
 }
 
@@ -370,6 +369,7 @@ git_decrypt_command() {
   inputfile="$(mktemp -t trk-encrypt.XXXXXXXXXX)"
   outputfile="$(mktemp -t trk-encrypt.XXXXXXXXXX)"
   trap 'rm -f "$inputfile"' EXIT
+  # shellcheck disable=SC2086
   if tee "$inputfile" | PASSPHRASE="$passphrase" $OPENSSL_BIN enc -d $OPENSSL_DEFAULT_ARGS -pass "env:PASSPHRASE" -S "$salt" -out "$outputfile" 2>/dev/null; then
     cat "$outputfile"
   else
@@ -394,9 +394,9 @@ git_merge_command() {
   trap 'rm -f "$base_temp" "$current_temp" "$other_temp"' EXIT
 
   # Decrypt files
-  cat "$base"    | git_decrypt_command "$dest" > "$base_temp"
-  cat "$current" | git_decrypt_command "$dest" > "$current_temp"
-  cat "$other"   | git_decrypt_command "$dest" > "$other_temp"
+  git_decrypt_command "$dest" < "$base"    > "$base_temp"
+  git_decrypt_command "$dest" < "$current" > "$current_temp"
+  git_decrypt_command "$dest" < "$other"   > "$other_temp"
 
   cp "$base_temp"    "$base"
   cp "$current_temp" "$current"
@@ -408,16 +408,8 @@ git_merge_command() {
   $GIT_BIN merge-file --marker-size="$marker" -L HEAD -L BASE -L "$other_branch" "$current" "$base" "$other"
 
   # Encrypt merged result back
-  cat "$current" | git_encrypt_command "$dest" > "$current_temp"
+  git_encrypt_command "$dest" < "$current" > "$current_temp"
   cp "$current_temp" "$current"
-}
-
-# Hooks
-
-add_command_post() {
-  if [ $1 -eq 128 ]; then
-    echo "only files in the $($GIT_BIN config core.worktree) worktree are allowed."
-  fi
 }
 
 # Helpers
@@ -517,10 +509,6 @@ main() {
   else
     $GIT_BIN "${commands[@]}" "${args[@]}"
   fi
-
-  #if declare -F "${COMMAND}_command_post" &>/dev/null; then
-  #  "${COMMAND}_command_post" "$git_exit_code" "${args[@]}"
-  #fi
 }
 
 main "$@"
