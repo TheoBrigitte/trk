@@ -177,6 +177,7 @@ clone_normal() {
   cd "$repository_basename"
   GIT_DIR="$($GIT_BIN rev-parse --git-dir)"
   $GIT_BIN reset --mixed --quiet
+  $GIT_BIN ls-files --deleted | $GIT_BIN checkout --pathspec-from-file -
 
   configure_repo
 }
