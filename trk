@@ -29,6 +29,8 @@ Any git command can be used as a <command>.
 Commands:
   init                 Initialize a new repository
   clone                Clone a repository
+  setup                Setup the repository to use trk
+  unsetup              Unsetup the repository from trk
   mark                 Mark a file or pattern to be encrypted when committed
   unmark               Remove encryption mark
   list encrypted       List all encrypted files
@@ -261,6 +263,21 @@ init_global() {
   $GIT_BIN init --shared=0600 "$temp_dir/repo" "$@"
   configure_repo
   configure_repo_global "$worktree"
+}
+
+setup_command() {
+  unset GIT_DIR
+  if $GIT_BIN config --local trk.managed &> /dev/null; then
+    echo "Repository is already managed by trk."
+    exit 0
+  fi
+
+  configure_repo
+}
+
+unsetup_command() {
+  unset GIT_DIR
+  unconfigure_repo
 }
 
 # Export configuration
@@ -561,6 +578,22 @@ configure_repo_global() {
   worktree="$1"
   $GIT_BIN config --local core.worktree "$worktree"
   $GIT_BIN config --local status.showUntrackedFiles no
+}
+
+unconfigure_repo() {
+  if is_git_before_2_46; then
+    $GIT_BIN config --local --unset trk.managed
+    $GIT_BIN config --local --unset trk.openssl-args
+    $GIT_BIN config --local --unset trk.passphrase
+    $GIT_BIN config --local --remove-section filter.crypt
+    $GIT_BIN config --local --remove-section merge.crypt
+    $GIT_BIN config --local --remove-section diff.crypt
+  else
+    $GIT_BIN config remove-section --local trk
+    $GIT_BIN config remove-section --local filter.crypt
+    $GIT_BIN config remove-section --local merge.crypt
+    $GIT_BIN config remove-section --local diff.crypt
+  fi
 }
 
 # Ensure that the required directories are available
