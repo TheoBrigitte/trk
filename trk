@@ -13,6 +13,7 @@ OPENSSL_DEFAULT_ARGS="-aes-256-cbc -md sha256 -pbkdf2"
 
 YES_PATTERN="^[Yy]$"
 
+#####################################
 # Help messages
 
 help_command() {
@@ -31,10 +32,15 @@ Commands:
   clone                Clone a repository
   setup                Setup the repository to use trk
   unsetup              Unsetup the repository from trk
+  help                 Show this help message
+
+  > Encryption <
   mark                 Mark a file or pattern to be encrypted when committed
   unmark               Remove encryption mark
   list encrypted       List all encrypted files
   reencrypt            Reencrypt all encrypted files
+
+  > Configuration <
   config export        Export configuration
   config import        Import configuration from a file
   passphrase get       Get the encryption key
@@ -43,7 +49,6 @@ Commands:
   openssl set-args     Set OpenSSL arguments for encryption and decryption
   openssl get-args     Get OpenSSL arguments for encryption and decryption
   openssl reset-args   Reset OpenSSL arguments to default
-  help                 Show this help message
 
 Options:
 
@@ -135,6 +140,16 @@ Set OpenSSL arguments for encryption and decryption.
 EOF
 }
 
+reencrypt_help_command() {
+  cat <<EOF
+Usage: $TRK_BIN reencrypt
+
+Reencrypt all encrypted files.
+Files are reencrypted only if the passphrase is changed.
+EOF
+}
+
+#####################################
 # Git commands
 
 clone_command() {
@@ -150,7 +165,7 @@ clone_command() {
   fi
 }
 
-# Clone a repository and configure it witk trk settings
+# Clone a repository and configure it to be managed by trk
 clone_normal() {
   unset GIT_DIR
   $GIT_BIN clone --no-checkout "$@"
@@ -166,7 +181,7 @@ clone_normal() {
   configure_repo
 }
 
-# Clone a repository with a specific worktree
+# Clone a repository with as a global repository with a specific worktree
 # Worktree is left unchanged if there are local changes
 clone_global() {
   if [ $# -lt 1 ]; then
@@ -188,8 +203,8 @@ clone_global() {
   echo "Cloning repository with worktree $worktree"
 
   # Clone the repository
-  # Use standard cloning procedure and remove the temporary directory afterward
-  # This is to avoid any --bare shenanigans
+  # Use standard cloning procedure and remove the temporary directory afterward to only keep git dir
+  # This is to avoid any --bare shenanigans, like refs/remotes/origin/ not being set.
   temp_dir="$(mktemp -d -t trk-clone.XXXXXXXXXX)"
   trap 'rm -rf "$temp_dir"' EXIT
   $GIT_BIN clone --config core.sharedrepository=0600 --no-checkout --separate-git-dir="$SHARE_GIT_DIR" "$@" "$temp_dir"
@@ -215,7 +230,6 @@ EOF
 }
 
 # Initialize a new repository
-# Encryption passphrase is generated and stored git config
 init_command() {
   if [ $# -eq 1 ] && [ "$1" = "--help" ]; then
     init_help_command
@@ -239,7 +253,7 @@ init_normal() {
   configure_repo
 }
 
-# Initialize a new repository with a specific worktree
+# Initialize a new repository as global repository with a specific worktree
 init_global() {
   if [ -d "$SHARE_GIT_DIR" ]; then
     if [ "$FORCE" = true ]; then
@@ -254,7 +268,7 @@ init_global() {
   echo "Initializing repository for worktree $worktree"
 
   # Initialize the repository
-  # Using the standard git init procedure and remove the temporary directory afterward
+  # Using the standard git init procedure and remove the temporary directory afterward to only keep git dir
   # This is to avoid any --bare shenanigans
   # The git dir is set by GIT_DIR environment variable
   temp_dir="$(mktemp -d -t trk-init.XXXXXXXXXX)"
@@ -265,6 +279,7 @@ init_global() {
   configure_repo_global "$worktree"
 }
 
+# Setup the repository to use trk
 setup_command() {
   unset GIT_DIR
   if $GIT_BIN config --local trk.managed &> /dev/null; then
@@ -275,6 +290,7 @@ setup_command() {
   configure_repo
 }
 
+# Unsetup the repository from trk
 unsetup_command() {
   unset GIT_DIR
   unconfigure_repo
@@ -317,6 +333,7 @@ config_import_command() {
   fi
 }
 
+#####################################
 # Encryption
 
 # List all encrypted files
@@ -329,6 +346,11 @@ list_encrypted_command() {
 # This command reencrypts all files currently encrypted in the repository
 # It is useful when the passphrase is changed
 reencrypt_command() {
+  if [ $# -eq 1 ] && [ "$1" = "--help" ]; then
+    reencrypt_help_command
+    exit 0
+  fi
+
   # shellcheck disable=SC2207
   IFS=$'\n' list=($(list_encrypted_command))
   printf '"%s"\n' "${list[@]}" | xargs touch
@@ -344,7 +366,7 @@ generate_attribute() {
   echo "$escaped_path filter=crypt diff=crypt merge=crypt"
 }
 
-# Mark a file to be encrypted when committed
+# Add a pattern to match files for encryption when committed
 mark_command() {
   if [ $# -lt 1 ]; then
     mark_help_command
@@ -368,7 +390,7 @@ mark_command() {
   $GIT_BIN add "$git_root/.gitattributes"
 }
 
-# Remove encryption mark from a file
+# Remove an encryption mark
 unmark_command() {
   if [ $# -lt 1 ]; then
     unmark_help_command
@@ -450,10 +472,12 @@ passphrase_import_command() {
   $GIT_BIN config --local trk.passphrase "$passphrase"
 }
 
+# Generate a passphrase for encryption
 passphrase_generate() {
   $GIT_BIN config --local trk.passphrase "$($OPENSSL_BIN rand -base64 32)"
 }
 
+# Get the passphrase used for encryption
 passphrase_get() {
   $GIT_BIN config --local trk.passphrase
 }
@@ -478,6 +502,7 @@ openssl_set-args_command() {
   $GIT_BIN config --local trk.openssl-args "$*"
 }
 
+#####################################
 # Internal commands for git filters
 
 # Generate a salt for encryption
@@ -550,6 +575,7 @@ git_merge_command() {
   cp "$current_temp" "$current"
 }
 
+#####################################
 # Helpers
 
 # Detect if the git version is before 2.46
@@ -559,7 +585,13 @@ is_git_before_2_46() {
   printf '%s\n' "$version" "2.46" | sort -C -V
 }
 
-# Configure the git repository with worktree, encryption filters, and other settings
+# Configure the git repository with
+# - encryption filters
+# - merge driver
+# - diff attribute
+# - trk settings:
+#   - passphrase
+#   - openssl aruments
 configure_repo() {
   $GIT_BIN config --local core.bare false
   $GIT_BIN config --local trk.managed true
@@ -573,13 +605,16 @@ configure_repo() {
   passphrase_generate
 }
 
-# Configure the git repository with worktree
+# Configure the git repository with
+# - worktree
+# - hide untracked files
 configure_repo_global() {
   worktree="$1"
   $GIT_BIN config --local core.worktree "$worktree"
   $GIT_BIN config --local status.showUntrackedFiles no
 }
 
+# Remove trk configuration for the git repository
 unconfigure_repo() {
   if is_git_before_2_46; then
     $GIT_BIN config --local --unset trk.managed
@@ -610,6 +645,7 @@ ensure_bins() {
 # Set the environment variables for the git repository
 # The GIT_DIR environment variable is used by git to determine the git dir location
 set_env() {
+  # Do not set GIT_DIR in case we are in a repository managed by trk
   if $GIT_BIN config --local trk.managed &> /dev/null; then
     return
   fi
@@ -617,11 +653,15 @@ set_env() {
   export GIT_DIR="$SHARE_GIT_DIR"
 }
 
+# Join strings with a delimiter
 join_by() {
   local IFS="$1"
   shift
   echo "$*"
 }
+
+#####################################
+# Main
 
 main() {
   set_env
