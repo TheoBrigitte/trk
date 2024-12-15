@@ -14,6 +14,13 @@ Encryption is done via OpenSSL and leverage [Git clean/smudge filters](https://g
 
 ## Quick start
 
+Grab the script and install it in your path:
+
+```
+wget https://raw.githubusercontent.com/TheoBrigitte/trk/refs/heads/main/trk
+install -D -m 755 trk ~/.local/bin/trk
+```
+
 ### From scratch
 
 ```
