@@ -1,5 +1,5 @@
 <p align="center">
-    <img src="assets/trk.png" alt="trk" height="100px">
+    <img src="assets/trk.jpg" alt="trk" height="100px">
 </p>
 
 # trk
