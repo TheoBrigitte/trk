@@ -646,8 +646,11 @@ ensure_bins() {
 # Set the environment variables for the git repository
 # The GIT_DIR environment variable is used by git to determine the git dir location
 set_env() {
-  # Do not set GIT_DIR in case we are in a repository managed by trk
-  if $GIT_BIN config --local trk.managed &> /dev/null; then
+  # Do not set GIT_DIR in case we are in a repository
+  if managed="$($GIT_BIN config --default false --local trk.managed 2> /dev/null)"; then
+    if [ "$managed" != "true" ]; then
+      echo "Warning: trk encryption is not setup for this repository, to setup trk encryption run: trk setup" >&2
+    fi
     return
   fi
 
