@@ -18,7 +18,7 @@ YES_PATTERN="^[Yy]$"
 
 help_command() {
   repository="$($GIT_BIN rev-parse --git-dir 2>/dev/null || echo 'not set')"
-  worktree="$($GIT_BIN config --default 'not set' core.worktree)"
+  worktree="$($GIT_BIN config --default 'not set' core.worktree 2>/dev/null || echo 'not set')"
 
   cat <<EOF
 Usage: $TRK_BIN <command> [options]
