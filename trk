@@ -16,7 +16,7 @@ YES_PATTERN="^[Yy]$"
 #####################################
 # Help messages
 
-help_command() {
+_help() {
   repository="$($GIT_BIN rev-parse --git-dir 2>/dev/null || echo 'not set')"
   worktree="$($GIT_BIN config --default 'not set' core.worktree 2>/dev/null || echo 'not set')"
 
@@ -60,7 +60,7 @@ Variables:
 EOF
 }
 
-clone_help_command() {
+clone_command_help() {
   cat <<EOF
 Usage: $TRK_BIN clone [ --worktree <path> ] <git options>...
 
@@ -74,7 +74,7 @@ Options:
 EOF
 }
 
-init_help_command() {
+init_command_help() {
   cat <<EOF
 Usage: $TRK_BIN init [ --worktree <path> ] <git options>...
 
@@ -88,7 +88,7 @@ Options:
 EOF
 }
 
-mark_help_command() {
+mark_command_help() {
   cat <<EOF
 Usage: $TRK_BIN mark <file or pattern>
 
@@ -103,7 +103,7 @@ Options:
 EOF
 }
 
-unmark_help_command() {
+unmark_command_help() {
   cat <<EOF
 Usage: $TRK_BIN unmark <file or pattern>
 
@@ -115,7 +115,7 @@ Options:
 EOF
 }
 
-config_import_help_command() {
+config_import_command_help() {
   cat <<EOF
 Usage: $TRK_BIN config import <file>
 
@@ -124,7 +124,7 @@ It imports the passphrase and OpenSSL arguments if they exist.
 EOF
 }
 
-passphrase_import_help_command() {
+passphrase_import_command_help() {
   cat <<EOF
 Usage: $TRK_BIN passphrase import <file>
 
@@ -132,7 +132,7 @@ Import an encryption key from a file.
 EOF
 }
 
-openssl_set_args_help_command() {
+openssl_set_args_command_help() {
   cat <<EOF
 Usage: $TRK_BIN openssl set-args <args>...
 
@@ -140,7 +140,7 @@ Set OpenSSL arguments for encryption and decryption.
 EOF
 }
 
-reencrypt_help_command() {
+reencrypt_command_help() {
   cat <<EOF
 Usage: $TRK_BIN reencrypt
 
@@ -153,11 +153,6 @@ EOF
 # Git commands
 
 clone_command() {
-  if [ $# -eq 1 ] && [ "$1" = "--help" ]; then
-    clone_help_command
-    exit 0
-  fi
-
   if [ -n "$WORKTREE" ]; then
     clone_global "$@"
   else
@@ -186,8 +181,8 @@ clone_normal() {
 # Worktree is left unchanged if there are local changes
 clone_global() {
   if [ $# -lt 1 ]; then
-    clone_help_command
-    exit 0
+    echo "Missing repository URL."
+    exit 1
   fi
 
   if [ -d "$SHARE_GIT_DIR" ]; then
@@ -232,11 +227,6 @@ EOF
 
 # Initialize a new repository
 init_command() {
-  if [ $# -eq 1 ] && [ "$1" = "--help" ]; then
-    init_help_command
-    exit 0
-  fi
-
   if [ -n "$WORKTREE" ]; then
     init_global "$@"
   else
@@ -309,8 +299,8 @@ config_export_command() {
 # Import configuration from a file
 config_import_command() {
   if [ $# -lt 1 ]; then
-    config_import_help_command
-    exit 0
+    echo "Missing configuration file."
+    exit 1
   fi
 
   exec 6< "$1"
@@ -347,11 +337,6 @@ list_encrypted_command() {
 # This command reencrypts all files currently encrypted in the repository
 # It is useful when the passphrase is changed
 reencrypt_command() {
-  if [ $# -eq 1 ] && [ "$1" = "--help" ]; then
-    reencrypt_help_command
-    exit 0
-  fi
-
   # shellcheck disable=SC2207
   IFS=$'\n' list=($(list_encrypted_command))
   printf '"%s"\n' "${list[@]}" | xargs touch
@@ -370,8 +355,8 @@ generate_attribute() {
 # Add a pattern to match files for encryption when committed
 mark_command() {
   if [ $# -lt 1 ]; then
-    mark_help_command
-    exit 0
+    echo "Missing file or pattern."
+    exit 1
   fi
 
   git_root="$($GIT_BIN rev-parse --show-toplevel)"
@@ -394,8 +379,8 @@ mark_command() {
 # Remove an encryption mark
 unmark_command() {
   if [ $# -lt 1 ]; then
-    unmark_help_command
-    exit 0
+    echo "Missing file or pattern."
+    exit 1
   fi
 
   git_root="$($GIT_BIN rev-parse --show-toplevel)"
@@ -442,8 +427,8 @@ passphrase_get_command() {
 # Import a passphrase from a file
 passphrase_import_command() {
   if [ $# -lt 1 ]; then
-    passphrase_import_help_command
-    exit 0
+    echo "Missing passphrase file."
+    exit 1
   fi
 
   passphrase="$(cat "$1")"
@@ -496,8 +481,8 @@ openssl_reset-args_command() {
 # Set OpenSSL arguments used for encryption and decryption
 openssl_set-args_command() {
   if [ $# -lt 1 ]; then
-    openssl_set_args_help_command
-    exit 0
+    echo "Missing OpenSSL arguments."
+    exit 1
   fi
 
   $GIT_BIN config --local trk.openssl-args "$*"
@@ -672,59 +657,74 @@ main() {
   ensure_dir
   ensure_bins
 
-  # Handle no arguments case
+  # Show help when no arguments is given
   if [ $# -lt 1 ]; then
-    help_command
+    _help
     exit 0
   fi
 
-  # Handle commands and subcommands
-  commands=("$1")
-  shift
+  # Global variables
+  FORCE=false
+  WORKTREE=""
 
-  case "${commands[0]}" in
-    config|git|list|openssl|passphrase)
-      subcommand="${1-}"
-      if [ -z "$subcommand" ]; then
-        help_command
-        exit 0
-      fi
-      shift
-      commands+=("$subcommand")
-      ;;
-  esac
+  # Handle arguments
+  show_help=false
+  original_args=("$@")
+  args=()
+  while [ $# -gt 0 ]; do
+    case $1 in
+      -f|--force)
+        FORCE=true
+        ;;
+      -h|--help)
+        show_help=true
+        ;;
+      --worktree)
+        WORKTREE="${2-}"
+        if [ -z "$WORKTREE" ]; then
+          echo "Missing worktree path."
+          exit 1
+        fi
+        shift
+        ;;
+      --)
+        shift
+        break
+        ;;
+      *)
+        args+=("$1")
+        ;;
+    esac
 
-  # Execute the command
-  # Fallback to git command if the command is not found
-  trk_command="$(join_by _ "${commands[@]}")_command"
-  if declare -F "$trk_command" &>/dev/null; then
-    # Handle options
-    FORCE=false
-    WORKTREE=""
+    shift
+  done
 
-    args=()
-    while [[ $# -gt 0 ]] ; do
-      case "$1" in
-        -f|--force)
-          FORCE=true
-          shift
-          continue
-          ;;
-        --worktree)
-          WORKTREE="$2"
-          shift 2
-          continue
-          ;;
-        *)
-          args+=("$1")
-          shift
-          ;;
-      esac
-    done
+  set -- "${args[@]}"
 
-    "$trk_command" "${args[@]}"
+  # Build trk command
+  trk_command=""
+  for ((i=0; i<$#; i++)); do
+    # Try every positional arguments combination in reverse order
+    cmd_parts=("${@:1:$#-$i}")
+    cmd="$(join_by _ "${cmd_parts[@]}")_command"
+    if declare -F "$cmd" &>/dev/null; then
+      trk_command="$cmd"
+      shift $(($#-$i))
+      break
+    fi
+  done
+
+  if [ -n "$trk_command" ] || [ $# -eq 0 ]; then
+    # Execute trk
+    if $show_help; then
+      "${trk_command}_help" 2>/dev/null || echo "No help available"
+      exit 0
+    fi
+
+    "${trk_command}" "$@"
   else
-    $GIT_BIN "${commands[@]}" "${@}"
+    # Fallback to git command
+    "$GIT_BIN" ${original_args[@]}
   fi
 }
 
