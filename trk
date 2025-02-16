@@ -300,9 +300,9 @@ unsetup_command() {
 # Export configuration
 config_export_command() {
   if is_git_before_2_46; then
-    $GIT_BIN config --get-regexp '^trk\.'
-  else
     $GIT_BIN config --local --all --show-names --regexp '^trk\.'
+  else
+    $GIT_BIN config --get-regexp '^trk\.'
   fi
 }
 
