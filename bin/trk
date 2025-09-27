@@ -113,7 +113,7 @@ clone_normal() {
   unset GIT_DIR
   $GIT_BIN clone --no-checkout "$@"
 
-  repository="${@: -1}"
+  repository="${!#}"
   repository_no_git_suffix="${repository%.git}"
   repository_basename="${repository_no_git_suffix##*/}"
 
@@ -798,7 +798,7 @@ main() {
     cmd="$(join_by _ "${cmd_parts[@]}")_command"
     if declare -F "$cmd" &>/dev/null; then
       trk_command="$cmd"
-      shift $(($#-$i))
+      shift $(($#-i))
       break
     fi
   done
@@ -813,7 +813,7 @@ main() {
     "${trk_command}" "$@"
   else
     # Fallback to git command
-    "$GIT_BIN" ${original_args[@]}
+    "$GIT_BIN" "${original_args[@]}"
   fi
 }
 
