@@ -1,4 +1,40 @@
 #!/bin/bash
+#
+# Author: Théo Brigitte
+# Date: 2025-09-27
+#
+# Usage: trk <command> [options]
+#
+# Git wrapper for managing a repository and encrypting files.
+#
+# Any git command can be used as a <command>.
+#
+# Commands:
+#   init                 Initialize a new repository
+#   clone                Clone a repository
+#   setup                Setup the repository to use trk
+#   unsetup              Unsetup the repository from trk
+#   worktree             Show the git repository worktree and git dir
+#   help                 Show this help message
+#
+#   > Encryption <
+#   mark                 Mark a file or pattern to be encrypted when committed
+#   unmark               Remove encryption mark
+#   list encrypted       List all encrypted files
+#   reencrypt            Reencrypt all encrypted files
+#
+#   > Configuration <
+#   config export        Export configuration
+#   config import        Import configuration from a file
+#   passphrase get       Get the encryption key
+#   passphrase generate  Generate a new encryption key
+#   passphrase import    Import an encryption key from a file
+#   openssl set-args     Set OpenSSL arguments for encryption and decryption
+#   openssl get-args     Get OpenSSL arguments for encryption and decryption
+#   openssl reset-args   Reset OpenSSL arguments to default
+#
+# Options:
+#   -f, --force  Force the command
 
 set -eu
 
@@ -16,136 +52,33 @@ YES_PATTERN="^[Yy]$"
 #####################################
 # Help messages
 
+# print help message for a specific command
+# usage: _help <command> [<subcommand> ...]
 _help() {
-  cat <<EOF
-Usage: $TRK_BIN <command> [options]
+  # Extract usage from the script comments
+  # Comments must start with "# Usage: arguments.sh" followed by the command name(s).
+  # Comments can have at most 1 space identation.
+  # If no command is given, print the general usage
 
-Git wrapper for managing a repository and encrypting files.
-
-Any git command can be used as a <command>.
-
-Commands:
-  init                 Initialize a new repository
-  clone                Clone a repository
-  setup                Setup the repository to use trk
-  unsetup              Unsetup the repository from trk
-  worktree             Show the git repository worktree and git dir
-  help                 Show this help message
-
-  > Encryption <
-  mark                 Mark a file or pattern to be encrypted when committed
-  unmark               Remove encryption mark
-  list encrypted       List all encrypted files
-  reencrypt            Reencrypt all encrypted files
-
-  > Configuration <
-  config export        Export configuration
-  config import        Import configuration from a file
-  passphrase get       Get the encryption key
-  passphrase generate  Generate a new encryption key
-  passphrase import    Import an encryption key from a file
-  openssl set-args     Set OpenSSL arguments for encryption and decryption
-  openssl get-args     Get OpenSSL arguments for encryption and decryption
-  openssl reset-args   Reset OpenSSL arguments to default
-
-Options:
-
-  -f, --force  Force the command
-EOF
-}
-
-clone_command_help() {
-  cat <<EOF
-Usage: $TRK_BIN clone [ --worktree <path> ] <git options>...
-
-Clone a repository
-
-Options:
-
-  --worktree <path>  Set the worktree path
-                     When using this option, the repository is globally available and cloned in $SHARE_GIT_DIR
-  -f, --force        Force the command
-EOF
-}
-
-init_command_help() {
-  cat <<EOF
-Usage: $TRK_BIN init [ --worktree <path> ] <git options>...
-
-Initialize a new repository
-
-Options:
-
-  --worktree <path>  Set the worktree path
-                     When using this option, the repository is globally available and created in $SHARE_GIT_DIR
-  -f, --force        Force the command
-EOF
-}
-
-mark_command_help() {
-  cat <<EOF
-Usage: $TRK_BIN mark <file or pattern>
-
-Mark a file or pattern to be encrypted when committed.
-
-Patterns need to be quoted to prevent shell expansion.
-Patterns are gitattributes patterns, similar to .gitignore.
-
-Options:
-
-  -f, --force  Force the command
-EOF
-}
-
-unmark_command_help() {
-  cat <<EOF
-Usage: $TRK_BIN unmark <file or pattern>
-
-Remove encryption mark
-
-Options:
-
-  -f, --force  Force the command
-EOF
-}
-
-config_import_command_help() {
-  cat <<EOF
-Usage: $TRK_BIN config import <file>
-
-Import a git configuration from a file.
-It imports the passphrase and OpenSSL arguments if they exist.
-EOF
-}
-
-passphrase_import_command_help() {
-  cat <<EOF
-Usage: $TRK_BIN passphrase import <file>
-
-Import an encryption key from a file.
-EOF
-}
-
-openssl_set_args_command_help() {
-  cat <<EOF
-Usage: $TRK_BIN openssl set-args <args>...
-
-Set OpenSSL arguments for encryption and decryption.
-EOF
-}
-
-reencrypt_command_help() {
-  cat <<EOF
-Usage: $TRK_BIN reencrypt
-
-Reencrypt all encrypted files.
-Files are reencrypted only if the passphrase is changed.
-EOF
+  # This command works as follows:
+  # 1. /#\s?Usage: /   -> Search for the line starting with "# Usage: arguments.sh <command>
+  # 2. /^([^#]|$)/{p;  -> Print all subsequent lines starting with "#" until a line not starting with "#" is found
+  # 3. /^([^#]|$)/q}   -> Force quit after the first non-comment line to avoid printing other usage sections
+  # 4. '$d; s/#\s\?//' -> Remove the last line (non-comment) and strip leading "# " from each line
+  sed -Ene '/#\s?Usage: '"$TRK_BIN $*"'/,/^([^#]|$)/{p; /^([^#]|$)/q}' "$0" | sed -e '$d; s/#\s\?//'
 }
 
 #####################################
 # Git commands
 
+# Usage: trk clone [ --worktree <path> ] <git options>...
+#
+# Clone a repository
+#
+# Options:
+#   --worktree <path>  Set the worktree path
+#                      When using this option, the repository is globally available and cloned in $SHARE_GIT_DIR
+#   -f, --force        Force the command
 clone_command() {
   if [ -n "$WORKTREE" ]; then
     clone_global "$@"
@@ -219,7 +152,14 @@ EOF
   fi
 }
 
+# Usage: trk init [ --worktree <path> ] <git options>...
+#
 # Initialize a new repository
+#
+# Options:
+#   --worktree <path>        Set the worktree path
+#                            When using this option, the repository is globally available and created in $SHARE_GIT_DIR
+#   -f, --force              Force the command
 init_command() {
   if [ -n "$WORKTREE" ]; then
     init_global "$@"
@@ -264,6 +204,9 @@ init_global() {
   configure_repo_global "$worktree"
 }
 
+# Usage: trk worktree
+#
+# Show the git repository worktree and git dir
 worktree_command() {
   repository="$($GIT_BIN rev-parse --git-dir 2>/dev/null || echo 'not set')"
   worktree="$($GIT_BIN config --default 'not set' core.worktree 2>/dev/null || echo 'not set')"
@@ -272,6 +215,8 @@ worktree_command() {
   echo "gitdir:   $repository"
 }
 
+# Usage: trk setup
+#
 # Setup the repository to use trk
 setup_command() {
   unset GIT_DIR
@@ -283,13 +228,17 @@ setup_command() {
   configure_repo
 }
 
+# Usage: trk unsetup
+#
 # Unsetup the repository from trk
 unsetup_command() {
   unset GIT_DIR
   unconfigure_repo
 }
 
-# Export configuration
+# Usage: trk config export
+#
+# Export configuration in a format suitable for re-importing
 config_export_command() {
   if is_git_before_2_46; then
     $GIT_BIN config --local --all --show-names --regexp '^trk\.'
@@ -298,7 +247,10 @@ config_export_command() {
   fi
 }
 
+# Usage: trk config import <file>
+#
 # Import configuration from a file
+# It imports the passphrase and OpenSSL arguments if they exist.
 config_import_command() {
   if [ $# -lt 1 ]; then
     echo "Missing configuration file."
@@ -329,15 +281,17 @@ config_import_command() {
 #####################################
 # Encryption
 
-# List all encrypted files
-# This command lists all files currently encrypted in the repository
+# Usage: trk list encrypted
+#
+# Lists all files currently encrypted in the repository
 list_encrypted_command() {
   git -c core.quotePath=false ls-files | git -c core.quotePath=false check-attr --stdin filter | awk 'BEGIN { FS = ":" }; / crypt/{ print $1 }'
 }
 
-# Reencrypt all encrypted files
-# This command reencrypts all files currently encrypted in the repository
-# It is useful when the passphrase is changed
+# Usage: trk reencrypt
+#
+# Reencrypts all files currently encrypted in the repository
+# Files are reencrypted only if the passphrase is changed.
 reencrypt_command() {
   # shellcheck disable=SC2207
   IFS=$'\n' list=($(list_encrypted_command))
@@ -354,7 +308,15 @@ generate_attribute() {
   echo "$escaped_path filter=crypt diff=crypt merge=crypt"
 }
 
+# Usage: trk mark <file or pattern>
+#
 # Add a pattern to match files for encryption when committed
+#
+# Patterns need to be quoted to prevent shell expansion.
+# Patterns are gitattributes patterns, similar to .gitignore.
+#
+# Options:
+#   -f, --force  Force the command
 mark_command() {
   if [ $# -lt 1 ]; then
     echo "Missing file or pattern."
@@ -378,7 +340,12 @@ mark_command() {
   $GIT_BIN add "$git_root/.gitattributes"
 }
 
-# Remove an encryption mark
+# Usage: trk unmark <file or pattern>
+#
+# Remove encryption mark
+#
+# Options:
+#   -f, --force  Force the command
 unmark_command() {
   if [ $# -lt 1 ]; then
     echo "Missing file or pattern."
@@ -397,6 +364,8 @@ unmark_command() {
   $GIT_BIN add "$git_root/.gitattributes"
 }
 
+# Usage: trk passphrase generate
+#
 # Generate a passphrase for encryption
 # Ask for confirmation if a passphrase already exists
 passphrase_generate_command() {
@@ -421,12 +390,16 @@ passphrase_generate_command() {
   reencrypt_command
 }
 
+# Usage: trk passphrase get
+#
 # Display the passphrase
 passphrase_get_command() {
   passphrase_get
 }
 
-# Import a passphrase from a file
+# Usage: trk passphrase import <file>
+#
+# Import an encryption key from a file.
 passphrase_import_command() {
   if [ $# -lt 1 ]; then
     echo "Missing passphrase file."
@@ -470,16 +443,22 @@ passphrase_get() {
   $GIT_BIN config --local trk.passphrase
 }
 
+# Usage: trk openssl get-args
+#
 # Get OpenSSL arguments used for encryption and decryption
 openssl_get-args_command() {
   $GIT_BIN config --local trk.openssl-args
 }
 
+# Usage: trk openssl reset-args
+#
 # Reset OpenSSL arguments to default
 openssl_reset-args_command() {
   $GIT_BIN config --local trk.openssl-args "$OPENSSL_DEFAULT_ARGS"
 }
 
+# Usage: trk openssl set-args <args>...
+#
 # Set OpenSSL arguments used for encryption and decryption
 openssl_set-args_command() {
   if [ $# -lt 1 ]; then
@@ -719,7 +698,7 @@ main() {
   if [ -n "$trk_command" ] || [ $# -eq 0 ]; then
     # Execute trk
     if $show_help; then
-      "${trk_command}_help" 2>/dev/null || echo "No help available"
+      _help "${cmd_parts[@]}" 2>/dev/null || echo "No help available"
       exit 0
     fi
 
