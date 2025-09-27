@@ -17,9 +17,6 @@ YES_PATTERN="^[Yy]$"
 # Help messages
 
 _help() {
-  repository="$($GIT_BIN rev-parse --git-dir 2>/dev/null || echo 'not set')"
-  worktree="$($GIT_BIN config --default 'not set' core.worktree 2>/dev/null || echo 'not set')"
-
   cat <<EOF
 Usage: $TRK_BIN <command> [options]
 
@@ -32,6 +29,7 @@ Commands:
   clone                Clone a repository
   setup                Setup the repository to use trk
   unsetup              Unsetup the repository from trk
+  worktree             Show the git repository worktree and git dir
   help                 Show this help message
 
   > Encryption <
@@ -53,10 +51,6 @@ Commands:
 Options:
 
   -f, --force  Force the command
-
-Variables:
-  Repository: $repository
-  Worktree: $worktree
 EOF
 }
 
@@ -268,6 +262,14 @@ init_global() {
   $GIT_BIN init --shared=0600 "$temp_dir/repo" "$@"
   configure_repo
   configure_repo_global "$worktree"
+}
+
+worktree_command() {
+  repository="$($GIT_BIN rev-parse --git-dir 2>/dev/null || echo 'not set')"
+  worktree="$($GIT_BIN config --default 'not set' core.worktree 2>/dev/null || echo 'not set')"
+
+  echo "worktree: $worktree"
+  echo "gitdir:   $repository"
 }
 
 # Setup the repository to use trk
