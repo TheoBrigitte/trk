@@ -1,0 +1,38 @@
+#!/bin/sh
+#
+# Restore file permissions from the .gitpermissions file after checkout
+# .gitpermissions file should be in the root of the repository
+# .gitpermissions file should have lines in the format:
+# <file_path>:<octal_permissions>
+# e.g. src/main.c:755
+#
+# This script should be placed in the .git/hooks directory and made executable
+
+git_dir="$(git rev-parse --git-dir)"
+worktree="$(git config core.worktree || pwd)"
+if [ -z "$worktree" ]; then
+  echo "Could not determine work tree, exiting."
+  exit 1
+fi
+if [ -z "$git_dir" ]; then
+  echo "Could not determine git dir, exiting."
+  exit 1
+fi
+
+if [ ! -f "$worktree/.gitpermissions" ]; then
+  echo ".gitpermissions file not found, skipping permission restoration."
+  exit 0
+fi
+
+# Loop through each line in the .gitpermissions file and set the permissions
+cat "$worktree/.gitpermissions" | while read -r line; do
+  # Split line into file path and permissions
+  file="$(echo "$line" | awk -F: '{print $1}')"
+  perm="$(echo "$line" | awk -F: '{print $2}')"
+  if [ -e "$worktree/$file" ]; then
+    # Set the file permissions
+    chmod "$perm" "$worktree/$file"
+  else
+    echo "File $file does not exist, skipping..."
+  fi
+done

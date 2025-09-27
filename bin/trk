@@ -32,16 +32,25 @@
 #   openssl set-args     Set OpenSSL arguments for encryption and decryption
 #   openssl get-args     Get OpenSSL arguments for encryption and decryption
 #   openssl reset-args   Reset OpenSSL arguments to default
+#   permissions enable   Enable permission tracking
+#   permissions disable  Disable permission tracking
+#   permissions apply    Apply stored permissions to files
+#   permissions refresh  Refresh the stored permissions with current file permissions
+#   permissions status   Check the status of file permissions
 #
 # Options:
 #   -f, --force  Force the command
 
 set -eu
+shopt -s extglob
 
 TRK_BIN="trk"
 GIT_BIN="git"
 OPENSSL_BIN="openssl"
 
+# shellcheck disable=SC2128
+PREFIX_DIR="$(cd "$(dirname "${BASH_SOURCE}")/.." && pwd -P)"
+HOOKS_DIR="$PREFIX_DIR/lib/trk/hooks"
 SHARE_DIR=~/.local/share/trk
 SHARE_GIT_DIR="$SHARE_DIR/repo.git"
 
@@ -160,6 +169,8 @@ EOF
 #   --worktree <path>        Set the worktree path
 #                            When using this option, the repository is globally available and created in $SHARE_GIT_DIR
 #   -f, --force              Force the command
+#   --with[out]-encryption   Setup encryption for the repository (default on)
+#   --with[out]-permissions  Setup permission tracking for the repository (default off)
 init_command() {
   if [ -n "$WORKTREE" ]; then
     init_global "$@"
@@ -218,6 +229,10 @@ worktree_command() {
 # Usage: trk setup
 #
 # Setup the repository to use trk
+#
+# Options:
+#   --with[out]-encryption   Setup encryption for the repository (default on)
+#   --with[out]-permissions  Setup permission tracking for the repository (default off)
 setup_command() {
   unset GIT_DIR
   if $GIT_BIN config --local trk.managed &> /dev/null; then
@@ -277,6 +292,65 @@ config_import_command() {
     $GIT_BIN ls-files --deleted | $GIT_BIN checkout --pathspec-from-file -
   fi
 }
+
+# Usage: trk permissions enable
+#
+# Enable permission tracking
+permissions_enable_command() {
+  GIT_DIR="$($GIT_BIN rev-parse --git-dir)"
+  cp -i "$HOOKS_DIR/"* "$GIT_DIR/hooks/"
+  $GIT_BIN config --local trk.permissions true
+}
+
+# Usage: trk permissions disable
+#
+# Disable permission tracking
+permissions_disable_command() {
+  GIT_DIR="$($GIT_BIN rev-parse --git-dir)"
+  rm -f "$GIT_DIR/hooks/pre-commit" "$GIT_DIR/hooks/post-checkout"
+  $GIT_BIN config --local trk.permissions false
+}
+
+# Usage: trk permissions apply
+#
+# Apply the permissions stored in .gitpermissions
+permissions_apply_command() {
+  git hook run post-checkout
+}
+
+# Usage: trk permissions refresh
+#
+# Refresh the .gitpermissions file with current file permissions
+permissions_refresh_command() {
+  git hook run pre-commit
+}
+
+# Usage: trk permissions status
+#
+# Check the status of file permissions against .gitpermissions
+permissions_status_command() {
+  git_root="$($GIT_BIN rev-parse --show-toplevel)"
+  cat "$git_root/.gitpermissions" | while read -r line; do
+    # Split line into file path and permissions
+    file="$(echo "$line" | awk -F: '{print $1}')"
+    perm="$(echo "$line" | awk -F: '{print $2}')"
+    if [[ ! -e "$git_root/$file" ]]; then
+      echo "[ERR] $file: does not exist, skipping..."
+      continue
+    fi
+
+    actual_perm="$(stat -c "%a" "$git_root/$file" 2>&1)"
+    if [[ "$actual_perm" == "$perm" ]]; then
+      echo "[OK]  $file: $perm"
+    else
+      echo "[ERR] $file: mismatch (expected $perm, actual $actual_perm)"
+    fi
+  done
+}
+
+# Usage: trk permissions commit
+#
+# Commit the .gitpermissions file
 
 #####################################
 # Encryption
@@ -563,13 +637,21 @@ configure_repo() {
   $GIT_BIN config --local core.bare false
   $GIT_BIN config --local trk.managed true
 
-  $GIT_BIN config --local filter.crypt.required true
-  $GIT_BIN config --local filter.crypt.clean  "$TRK_BIN git encrypt %f"
-  $GIT_BIN config --local filter.crypt.smudge "$TRK_BIN git decrypt %f"
-  $GIT_BIN config --local merge.crypt.driver  "$TRK_BIN git merge %O %A %B %L %P"
-  $GIT_BIN config --local diff.crypt.textconv cat
-  openssl_reset-args_command
-  passphrase_generate
+  if "$ENCRYPTION_ENABLED"; then
+    $GIT_BIN config --local filter.crypt.required true
+    $GIT_BIN config --local filter.crypt.clean  "$TRK_BIN git encrypt %f"
+    $GIT_BIN config --local filter.crypt.smudge "$TRK_BIN git decrypt %f"
+    $GIT_BIN config --local merge.crypt.driver  "$TRK_BIN git merge %O %A %B %L %P"
+    $GIT_BIN config --local diff.crypt.textconv cat
+    openssl_reset-args_command
+    passphrase_generate
+  fi
+
+  if "$PERMISSIONS_ENABLED"; then
+    permissions_enable_command
+  else
+    permissions_disable_command
+  fi
 }
 
 # Configure the git repository with
@@ -584,9 +666,7 @@ configure_repo_global() {
 # Remove trk configuration for the git repository
 unconfigure_repo() {
   if is_git_before_2_46; then
-    $GIT_BIN config --local --unset trk.managed
-    $GIT_BIN config --local --unset trk.openssl-args
-    $GIT_BIN config --local --unset trk.passphrase
+    $GIT_BIN config --local --unset trk
     $GIT_BIN config --local --remove-section filter.crypt
     $GIT_BIN config --local --remove-section merge.crypt
     $GIT_BIN config --local --remove-section diff.crypt
@@ -647,6 +727,8 @@ main() {
   # Global variables
   FORCE=false
   WORKTREE=""
+  ENCRYPTION_ENABLED=true
+  PERMISSIONS_ENABLED=false
 
   # Handle arguments
   show_help=false
@@ -659,6 +741,20 @@ main() {
         ;;
       -h|--help)
         show_help=true
+        ;;
+      --with?(out)-@(encryption|permissions))
+        option="${1##*-}"
+        option="${option^^}_ENABLED"
+        # Extra safety: check if the variable exists
+        if [ ! "${!option+set}" ]; then
+          echo "Invalid option: $1"
+          exit 1
+        fi
+        if [[ $1 =~ --without-* ]]; then
+          declare "$option"=false
+        else
+          declare "$option"=true
+        fi
         ;;
       --worktree)
         WORKTREE="${2-}"

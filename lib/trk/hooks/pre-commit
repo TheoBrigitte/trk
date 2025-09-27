@@ -1,0 +1,25 @@
+#!/bin/sh
+#
+# Generate a list of current file permissions in the repository
+# and save it to .gitpermissions file in the root of the repository.
+# This file can be used later to restore file permissions if needed.
+# .gitpermissions file will have lines in the format:
+# <file_path>:<octal_permissions>
+# e.g. src/main.c:755
+#
+# This script should be placed in the .git/hooks directory and made executable
+
+git_dir="$(git rev-parse --git-dir)"
+worktree="$(git config core.worktree || pwd)"
+if [ -z "$worktree" ]; then
+    echo "Could not determine work tree, exiting."
+    exit 1
+fi
+if [ -z "$git_dir" ]; then
+    echo "Could not determine git dir, exiting."
+    exit 1
+fi
+
+# Generate the .gitpermissions file
+git --git-dir "$git_dir" -C "$worktree" ls-files --full-name | xargs stat -c "%n:%a" > "$worktree/.gitpermissions"
+git add .gitpermissions
