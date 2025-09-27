@@ -15,6 +15,7 @@
 #   setup                Setup the repository to use trk
 #   unsetup              Unsetup the repository from trk
 #   worktree             Show the git repository worktree and git dir
+#   version              Show version information
 #   help                 Show this help message
 #
 #   > Encryption <
@@ -47,6 +48,7 @@ shopt -s extglob
 TRK_BIN="trk"
 GIT_BIN="git"
 OPENSSL_BIN="openssl"
+VERSION="dev"
 
 # shellcheck disable=SC2128
 PREFIX_DIR="$(cd "$(dirname "${BASH_SOURCE}")/.." && pwd -P)"
@@ -75,6 +77,16 @@ _help() {
   # 3. /^([^#]|$)/q}   -> Force quit after the first non-comment line to avoid printing other usage sections
   # 4. '$d; s/#\s\?//' -> Remove the last line (non-comment) and strip leading "# " from each line
   sed -Ene '/#\s?Usage: '"$TRK_BIN $*"'/,/^([^#]|$)/{p; /^([^#]|$)/q}' "$0" | sed -e '$d; s/#\s\?//'
+}
+
+help_command() {
+  _help
+}
+
+version_command() {
+  echo "trk version $VERSION"
+  echo "Git version: $($GIT_BIN --version | awk '{print $3}')"
+  echo "OpenSSL version: $($OPENSSL_BIN version | awk '{print $2}')"
 }
 
 #####################################
