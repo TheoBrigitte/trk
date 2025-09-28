@@ -33,8 +33,6 @@
 #   openssl set-args     Set OpenSSL arguments for encryption and decryption
 #   openssl get-args     Get OpenSSL arguments for encryption and decryption
 #   openssl reset-args   Reset OpenSSL arguments to default
-#   permissions enable   Enable permission tracking
-#   permissions disable  Disable permission tracking
 #   permissions apply    Apply stored permissions to files
 #   permissions refresh  Refresh the stored permissions with current file permissions
 #   permissions status   Check the status of file permissions
@@ -97,9 +95,10 @@ version_command() {
 # Clone a repository
 #
 # Options:
-#   --worktree <path>  Set the worktree path
-#                      When using this option, the repository is globally available and cloned in $SHARE_GIT_DIR
-#   -f, --force        Force the command
+#   --worktree <path>     Set the worktree path
+#                         When using this option, the repository is globally available and cloned in $SHARE_GIT_DIR
+#   -f, --force           Force the command
+#   --config-file <file>  Use a specific configuration file
 clone_command() {
   if [ -n "$WORKTREE" ]; then
     clone_global "$@"
@@ -119,10 +118,11 @@ clone_normal() {
 
   cd "$repository_basename"
   GIT_DIR="$($GIT_BIN rev-parse --git-dir)"
-  $GIT_BIN reset --mixed --quiet
-  $GIT_BIN ls-files --deleted | $GIT_BIN checkout --pathspec-from-file -
 
   configure_repo
+
+  $GIT_BIN reset --mixed --quiet
+  $GIT_BIN ls-files --deleted | $GIT_BIN checkout --pathspec-from-file -
 }
 
 # Clone a repository with as a global repository with a specific worktree
@@ -181,6 +181,7 @@ EOF
 #   --worktree <path>        Set the worktree path
 #                            When using this option, the repository is globally available and created in $SHARE_GIT_DIR
 #   -f, --force              Force the command
+#   --config-file <file>     Use a specific configuration file
 #   --with[out]-encryption   Setup encryption for the repository (default on)
 #   --with[out]-permissions  Setup permission tracking for the repository (default off)
 init_command() {
@@ -243,14 +244,11 @@ worktree_command() {
 # Setup the repository to use trk
 #
 # Options:
+#   --config-file <file>     Use a specific configuration file
 #   --with[out]-encryption   Setup encryption for the repository (default on)
 #   --with[out]-permissions  Setup permission tracking for the repository (default off)
 setup_command() {
   unset GIT_DIR
-  if $GIT_BIN config --local trk.managed &> /dev/null; then
-    echo "Repository is already managed by trk."
-    exit 0
-  fi
 
   configure_repo
 }
@@ -284,13 +282,9 @@ config_import_command() {
     exit 1
   fi
 
-  exec 6< "$1"
-  while read -r <&6 line; do
-    key=$(echo "$line" | cut -sd' ' -f1)
-    value=$(echo "$line" | cut -sd' ' -f2-)
-    $GIT_BIN config --local "$key" "$value"
-  done
-  exec 6<&-
+  CONFIG_FILE="$1"
+
+  configure_repo
 
   changes="$($GIT_BIN ls-files --deleted)"
   if [ -n "$changes" ]; then
@@ -305,19 +299,15 @@ config_import_command() {
   fi
 }
 
-# Usage: trk permissions enable
-#
 # Enable permission tracking
-permissions_enable_command() {
+permissions_enable() {
   GIT_DIR="$($GIT_BIN rev-parse --git-dir)"
   cp -i "$HOOKS_DIR/"* "$GIT_DIR/hooks/"
   $GIT_BIN config --local trk.permissions true
 }
 
-# Usage: trk permissions disable
-#
 # Disable permission tracking
-permissions_disable_command() {
+permissions_disable() {
   GIT_DIR="$($GIT_BIN rev-parse --git-dir)"
   rm -f "$GIT_DIR/hooks/pre-commit" "$GIT_DIR/hooks/post-checkout"
   $GIT_BIN config --local trk.permissions false
@@ -645,25 +635,59 @@ is_git_before_2_46() {
 # - trk settings:
 #   - passphrase
 #   - openssl aruments
+#   - permissions
+#     - hooks
 configure_repo() {
-  $GIT_BIN config --local core.bare false
+  # Always set trk.managed to true
   $GIT_BIN config --local trk.managed true
+  $GIT_BIN config --local core.bare false
 
+  # Setup encryption filters if enabled
   if "$ENCRYPTION_ENABLED"; then
-    $GIT_BIN config --local filter.crypt.required true
-    $GIT_BIN config --local filter.crypt.clean  "$TRK_BIN git encrypt %f"
-    $GIT_BIN config --local filter.crypt.smudge "$TRK_BIN git decrypt %f"
-    $GIT_BIN config --local merge.crypt.driver  "$TRK_BIN git merge %O %A %B %L %P"
-    $GIT_BIN config --local diff.crypt.textconv cat
-    openssl_reset-args_command
+    encryption_enable
+  else
+    encryption_disable
+  fi
+
+  # Import configuration from file if provided
+  if [[ -n "$CONFIG_FILE" ]]; then
+    cat "$CONFIG_FILE" | while read -r line; do
+      key="$(echo "$line" | cut -sd' ' -f1)"
+      value="$(echo "$line" | cut -sd' ' -f2-)"
+      $GIT_BIN config --local "$key" "$value"
+    done
+  fi
+
+  # Setup permissions tracking if enabled
+  # Doing this after importing configuration in order to detect if permissions tracking is enabled in the imported configuration
+  permissions_enabled="$($GIT_BIN config --local --default '' trk.permissions)"
+  if "$PERMISSIONS_ENABLED" || [ "$permissions_enabled" = "true" ]; then
+    permissions_enable
+  else
+    permissions_disable
+  fi
+
+  # Only generate passphrase if it doesn't exists
+  passphrase="$($GIT_BIN config --local --default '' trk.passphrase)"
+  if [ -z "$passphrase" ]; then
+    echo "No passphrase found, generating a new one."
     passphrase_generate
   fi
+}
 
-  if "$PERMISSIONS_ENABLED"; then
-    permissions_enable_command
-  else
-    permissions_disable_command
-  fi
+encryption_enable() {
+  $GIT_BIN config --local filter.crypt.required true
+  $GIT_BIN config --local filter.crypt.clean  "$TRK_BIN git encrypt %f"
+  $GIT_BIN config --local filter.crypt.smudge "$TRK_BIN git decrypt %f"
+  $GIT_BIN config --local merge.crypt.driver  "$TRK_BIN git merge %O %A %B %L %P"
+  $GIT_BIN config --local diff.crypt.textconv cat
+  openssl_reset-args_command
+}
+
+encryption_disable() {
+  git_config_unset filter.crypt
+  git_config_unset merge.crypt
+  git_config_unset diff.crypt
 }
 
 # Configure the git repository with
@@ -676,17 +700,11 @@ configure_repo_global() {
 }
 
 # Remove trk configuration for the git repository
-unconfigure_repo() {
+git_config_unset() {
   if is_git_before_2_46; then
-    $GIT_BIN config --local --unset trk
-    $GIT_BIN config --local --remove-section filter.crypt
-    $GIT_BIN config --local --remove-section merge.crypt
-    $GIT_BIN config --local --remove-section diff.crypt
+    $GIT_BIN config --local --remove-section "$1" 2>/dev/null || true
   else
-    $GIT_BIN config remove-section --local trk
-    $GIT_BIN config remove-section --local filter.crypt
-    $GIT_BIN config remove-section --local merge.crypt
-    $GIT_BIN config remove-section --local diff.crypt
+    $GIT_BIN config remove-section --local "$1" 2>/dev/null || true
   fi
 }
 
@@ -739,6 +757,7 @@ main() {
   # Global variables
   FORCE=false
   WORKTREE=""
+  CONFIG_FILE=""
   ENCRYPTION_ENABLED=true
   PERMISSIONS_ENABLED=false
 
@@ -748,6 +767,14 @@ main() {
   args=()
   while [ $# -gt 0 ]; do
     case $1 in
+      --config-file)
+        CONFIG_FILE="${2-}"
+        if [ -z "$CONFIG_FILE" ]; then
+          echo "Missing configuration file."
+          exit 1
+        fi
+        CONFIG_FILE="$(realpath -e "$CONFIG_FILE")"
+        shift;;
       -f|--force)
         FORCE=true
         ;;
