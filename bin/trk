@@ -458,7 +458,7 @@ unmark_command() {
 # Generate a passphrase for encryption
 # Ask for confirmation if a passphrase already exists
 passphrase_generate_command() {
-  current_passphrase="$($GIT_BIN config --local trk.passphrase)"
+  current_passphrase="$($GIT_BIN config --local --default '' trk.passphrase)"
   if ! $FORCE && [ -n "$current_passphrase" ]; then
     echo "Passphrase already exists."
     read -p "Do you want to generate a new passphrase? [y/N] " -n 1 -r
@@ -501,7 +501,7 @@ passphrase_import_command() {
     exit 1
   fi
 
-  if ! $FORCE && [ -n "$($GIT_BIN config --local trk.passphrase)" ]; then
+  if ! $FORCE && [ -n "$($GIT_BIN config --local --default '' trk.passphrase)" ]; then
     echo "Passphrase already exists."
     read -p "Do you want to overwrite the passphrase? [y/N] " -n 1 -r
     echo
@@ -529,14 +529,14 @@ passphrase_generate() {
 
 # Get the passphrase used for encryption
 passphrase_get() {
-  $GIT_BIN config --local trk.passphrase
+  $GIT_BIN config --local --default '' trk.passphrase
 }
 
 # Usage: trk openssl get-args
 #
 # Get OpenSSL arguments used for encryption and decryption
 openssl_get-args_command() {
-  $GIT_BIN config --local trk.openssl-args
+  $GIT_BIN config --local --default '' trk.openssl-args
 }
 
 # Usage: trk openssl reset-args
@@ -635,7 +635,7 @@ git_merge_command() {
 # Helpers
 
 # Detect if the git version is before 2.46
-# This is needed to handle the different behavior of `git config --get-regexp`
+# This is needed to handle the different behavior of `git config`
 is_git_before_2_46() {
   version="$($GIT_BIN --version | awk '{print $3}')"
   printf '%s\n' "$version" "2.46" | sort -C -V
