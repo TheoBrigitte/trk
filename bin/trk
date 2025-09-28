@@ -256,9 +256,22 @@ setup_command() {
 # Usage: trk unsetup
 #
 # Unsetup the repository from trk
+#
+# Options:
+#   --prune    Remove all trk related configuration and files from the repository
 unsetup_command() {
   unset GIT_DIR
-  unconfigure_repo
+
+  if "$PRUNE"; then
+    git_config_unset trk
+    git_root="$($GIT_BIN rev-parse --show-toplevel)"
+    rm -f "$git_root/.gitattributes" "$git_root/.gitpermissions"
+  else
+    $GIT_BIN config --local trk.managed false
+  fi
+
+  encryption_disable
+  permissions_disable
 }
 
 # Usage: trk config export
@@ -755,11 +768,12 @@ main() {
   fi
 
   # Global variables
-  FORCE=false
-  WORKTREE=""
   CONFIG_FILE=""
   ENCRYPTION_ENABLED=true
+  FORCE=false
   PERMISSIONS_ENABLED=false
+  PRUNE=false
+  WORKTREE=""
 
   # Handle arguments
   show_help=false
@@ -776,11 +790,11 @@ main() {
         CONFIG_FILE="$(realpath -e "$CONFIG_FILE")"
         shift;;
       -f|--force)
-        FORCE=true
-        ;;
+        FORCE=true;;
       -h|--help)
-        show_help=true
-        ;;
+        show_help=true;;
+      --prune)
+        PRUNE=true;;
       --with?(out)-@(encryption|permissions))
         option="${1##*-}"
         option="${option^^}_ENABLED"
@@ -793,23 +807,19 @@ main() {
           declare "$option"=false
         else
           declare "$option"=true
-        fi
-        ;;
+        fi;;
       --worktree)
         WORKTREE="${2-}"
         if [ -z "$WORKTREE" ]; then
           echo "Missing worktree path."
           exit 1
         fi
-        shift
-        ;;
+        shift;;
       --)
         shift
-        break
-        ;;
+        break;;
       *)
-        args+=("$1")
-        ;;
+        args+=("$1");;
     esac
 
     shift
