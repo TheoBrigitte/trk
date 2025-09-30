@@ -100,7 +100,7 @@ version_command() {
 #   -f, --force           Force the command
 #   --config-file <file>  Use a specific configuration file
 clone_command() {
-  if [ -n "$WORKTREE" ]; then
+  if [[ -n "$WORKTREE" ]]; then
     clone_global "$@"
   else
     clone_normal "$@"
@@ -128,13 +128,13 @@ clone_normal() {
 # Clone a repository with as a global repository with a specific worktree
 # Worktree is left unchanged if there are local changes
 clone_global() {
-  if [ $# -lt 1 ]; then
+  if [[ $# -lt 1 ]]; then
     echo "Missing repository URL."
     exit 1
   fi
 
-  if [ -d "$SHARE_GIT_DIR" ]; then
-    if [ "$FORCE" = true ]; then
+  if [[ -d "$SHARE_GIT_DIR" ]]; then
+    if [[ "$FORCE" = true ]]; then
       rm -rf "$SHARE_GIT_DIR"
     else
       echo "Repository already exists. Use -f to force."
@@ -160,7 +160,7 @@ clone_global() {
 
   # Check if there are local changes
   modified_files="$($GIT_BIN ls-files --modified)"
-  if [ -n "$modified_files" ]; then
+  if [[ -n "$modified_files" ]]; then
     cat <<EOF
 
 Local files differ from the cloned repository.
@@ -185,7 +185,7 @@ EOF
 #   --with[out]-encryption   Setup encryption for the repository (default on)
 #   --with[out]-permissions  Setup permission tracking for the repository (default off)
 init_command() {
-  if [ -n "$WORKTREE" ]; then
+  if [[ -n "$WORKTREE" ]]; then
     init_global "$@"
   else
     init_normal "$@"
@@ -197,15 +197,15 @@ init_normal() {
   $GIT_BIN init "$@"
 
   # Change to the repository directory if not current directory
-  [ "$#" -gt 0 ] && cd "${@: -1}"
+  [[ "$#" -gt 0 ]] && cd "${@: -1}"
 
   configure_repo
 }
 
 # Initialize a new repository as global repository with a specific worktree
 init_global() {
-  if [ -d "$SHARE_GIT_DIR" ]; then
-    if [ "$FORCE" = true ]; then
+  if [[ -d "$SHARE_GIT_DIR" ]]; then
+    if [[ "$FORCE" = true ]]; then
       rm -rf "$SHARE_GIT_DIR"
     else
       echo "Repository already exists. Use -f to force."
@@ -290,7 +290,7 @@ config_export_command() {
 # Import configuration from a file
 # It imports the passphrase and OpenSSL arguments if they exist.
 config_import_command() {
-  if [ $# -lt 1 ]; then
+  if [[ $# -lt 1 ]]; then
     echo "Missing configuration file."
     exit 1
   fi
@@ -300,7 +300,7 @@ config_import_command() {
   configure_repo
 
   changes="$($GIT_BIN ls-files --deleted)"
-  if [ -n "$changes" ]; then
+  if [[ -n "$changes" ]]; then
     if ! $FORCE; then
       read -p "Do you want to restore the deleted files? [y/N] " -n 1 -r
       echo
@@ -407,21 +407,21 @@ generate_attribute() {
 # Options:
 #   -f, --force  Force the command
 mark_command() {
-  if [ $# -lt 1 ]; then
+  if [[ $# -lt 1 ]]; then
     echo "Missing file or pattern."
     exit 1
   fi
 
   git_root="$($GIT_BIN rev-parse --show-toplevel)"
   # Create .gitattributes file if it doesn't exist
-  [ -f "$git_root/.gitattributes" ] || touch "$git_root/.gitattributes"
+  [[ -f "$git_root/.gitattributes" ]] || touch "$git_root/.gitattributes"
 
   # Add the git attribute for the file
   src="$(realpath --relative-to "$git_root" "$1")"
   attribute=$(generate_attribute "$src")
   escaped_attribute="${attribute//\*/\\*}"
   match="$(sed -n "\#^${escaped_attribute}\$#p" "$git_root/.gitattributes")"
-  if [ -n "$match" ]; then
+  if [[ -n "$match" ]]; then
     echo "$1 is already marked for encryption."
   else
     echo "$attribute" >> "$git_root/.gitattributes"
@@ -436,14 +436,14 @@ mark_command() {
 # Options:
 #   -f, --force  Force the command
 unmark_command() {
-  if [ $# -lt 1 ]; then
+  if [[ $# -lt 1 ]]; then
     echo "Missing file or pattern."
     exit 1
   fi
 
   git_root="$($GIT_BIN rev-parse --show-toplevel)"
   # Create .gitattributes file if it doesn't exist
-  [ -f "$git_root/.gitattributes" ] || touch "$git_root/.gitattributes"
+  [[ -f "$git_root/.gitattributes" ]] || touch "$git_root/.gitattributes"
 
   # Remove the git attribute for the file
   src="$(realpath --relative-to "$git_root" "$1")"
@@ -459,7 +459,7 @@ unmark_command() {
 # Ask for confirmation if a passphrase already exists
 passphrase_generate_command() {
   current_passphrase="$($GIT_BIN config --local --default '' trk.passphrase)"
-  if ! $FORCE && [ -n "$current_passphrase" ]; then
+  if ! $FORCE && [[ -n "$current_passphrase" ]]; then
     echo "Passphrase already exists."
     read -p "Do you want to generate a new passphrase? [y/N] " -n 1 -r
     echo
@@ -469,7 +469,7 @@ passphrase_generate_command() {
   fi
   passphrase_generate
 
-  if ! $FORCE [ -n "$current_passphrase" ]; then
+  if ! $FORCE [[ -n "$current_passphrase" ]]; then
     read -p "Do you want to re-encrypt all files? [y/N] " -n 1 -r
     echo
     if [[ ! $REPLY =~ $YES_PATTERN ]]; then
@@ -490,18 +490,18 @@ passphrase_get_command() {
 #
 # Import an encryption key from a file.
 passphrase_import_command() {
-  if [ $# -lt 1 ]; then
+  if [[ $# -lt 1 ]]; then
     echo "Missing passphrase file."
     exit 1
   fi
 
   passphrase="$(cat "$1")"
-  if [ -z "$passphrase" ]; then
+  if [[ -z "$passphrase" ]]; then
     echo "Passphrase file is empty."
     exit 1
   fi
 
-  if ! $FORCE && [ -n "$($GIT_BIN config --local --default '' trk.passphrase)" ]; then
+  if ! $FORCE && [[ -n "$($GIT_BIN config --local --default '' trk.passphrase)" ]]; then
     echo "Passphrase already exists."
     read -p "Do you want to overwrite the passphrase? [y/N] " -n 1 -r
     echo
@@ -510,7 +510,7 @@ passphrase_import_command() {
     fi
   fi
 
-  if ! $FORCE && [ "${#passphrase}" -lt 10 ]; then
+  if ! $FORCE && [[ "${#passphrase}" -lt 10 ]]; then
     echo "Weak passphrase."
     read -p "Do you want to use this passphrase? [y/N] " -n 1 -r
     echo
@@ -550,7 +550,7 @@ openssl_reset-args_command() {
 #
 # Set OpenSSL arguments used for encryption and decryption
 openssl_set-args_command() {
-  if [ $# -lt 1 ]; then
+  if [[ $# -lt 1 ]]; then
     echo "Missing OpenSSL arguments."
     exit 1
   fi
@@ -674,7 +674,7 @@ configure_repo() {
   # Setup permissions tracking if enabled
   # Doing this after importing configuration in order to detect if permissions tracking is enabled in the imported configuration
   permissions_enabled="$($GIT_BIN config --local --default '' trk.permissions)"
-  if "$PERMISSIONS_ENABLED" || [ "$permissions_enabled" = "true" ]; then
+  if "$PERMISSIONS_ENABLED" || [[ "$permissions_enabled" = "true" ]]; then
     permissions_enable
   else
     permissions_disable
@@ -682,7 +682,7 @@ configure_repo() {
 
   # Only generate passphrase if it doesn't exists
   passphrase="$($GIT_BIN config --local --default '' trk.passphrase)"
-  if [ -z "$passphrase" ]; then
+  if [[ -z "$passphrase" ]]; then
     echo "No passphrase found, generating a new one."
     passphrase_generate
   fi
@@ -723,7 +723,7 @@ git_config_unset() {
 
 # Ensure that the required directories are available
 ensure_dir() {
-  [ -d "$SHARE_DIR" ] || mkdir -p "$SHARE_DIR"
+  [[ -d "$SHARE_DIR" ]] || mkdir -p "$SHARE_DIR"
 }
 
 # Ensure that the required binaries are available
@@ -737,7 +737,7 @@ ensure_bins() {
 set_env() {
   # Do not set GIT_DIR in case we are in a repository
   if managed="$($GIT_BIN config --default false --local trk.managed 2> /dev/null)"; then
-    if [ "$managed" != "true" ]; then
+    if [[ "$managed" != "true" ]]; then
       echo "Warning: trk encryption is not setup for this repository, to setup trk encryption run: trk setup" >&2
     fi
     return
@@ -762,7 +762,7 @@ main() {
   ensure_bins
 
   # Show help when no arguments is given
-  if [ $# -lt 1 ]; then
+  if [[ $# -lt 1 ]]; then
     _help
     exit 0
   fi
@@ -779,11 +779,11 @@ main() {
   show_help=false
   original_args=("$@")
   args=()
-  while [ $# -gt 0 ]; do
+  while [[ $# -gt 0 ]]; do
     case $1 in
       --config-file)
         CONFIG_FILE="${2-}"
-        if [ -z "$CONFIG_FILE" ]; then
+        if [[ -z "$CONFIG_FILE" ]]; then
           echo "Missing configuration file."
           exit 1
         fi
@@ -799,7 +799,7 @@ main() {
         option="${1##*-}"
         option="${option^^}_ENABLED"
         # Extra safety: check if the variable exists
-        if [ ! "${!option+set}" ]; then
+        if [[ ! "${!option+set}" ]]; then
           echo "Invalid option: $1"
           exit 1
         fi
@@ -810,7 +810,7 @@ main() {
         fi;;
       --worktree)
         WORKTREE="${2-}"
-        if [ -z "$WORKTREE" ]; then
+        if [[ -z "$WORKTREE" ]]; then
           echo "Missing worktree path."
           exit 1
         fi
@@ -840,7 +840,7 @@ main() {
     fi
   done
 
-  if [ -n "$trk_command" ] || [ $# -eq 0 ]; then
+  if [[ -n "$trk_command" ]] || [[ $# -eq 0 ]]; then
     # Execute trk
     if $show_help; then
       _help "${cmd_parts[@]}" 2>/dev/null || echo "No help available"
