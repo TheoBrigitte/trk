@@ -477,14 +477,14 @@ passphrase_generate_command() {
   fi
   passphrase_generate
 
-  if ! $FORCE [[ -n "$current_passphrase" ]]; then
+  if ! $FORCE && [[ -n "$current_passphrase" ]]; then
     read -p "Do you want to re-encrypt all files? [y/N] " -n 1 -r
     echo
     if [[ ! $REPLY =~ $YES_PATTERN ]]; then
       exit 0
     fi
+    reencrypt_command
   fi
-  reencrypt_command
 }
 
 # Usage: trk passphrase get
