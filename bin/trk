@@ -158,7 +158,10 @@ clone_global() {
   # Get changes from the cloned repository into the index
   $GIT_BIN reset --mixed --quiet
 
-  # Check if there are local changes
+  # Checkout files from the index to the worktree (if they don't exist yet)
+  $GIT_BIN ls-files --deleted | $GIT_BIN checkout --pathspec-from-file -
+
+  # Check if there are local changes after checkout
   modified_files="$($GIT_BIN ls-files --modified)"
   if [[ -n "$modified_files" ]]; then
     cat <<EOF
