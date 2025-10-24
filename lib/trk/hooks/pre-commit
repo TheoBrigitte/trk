@@ -21,5 +21,5 @@ if [ -z "$git_dir" ]; then
 fi
 
 # Generate the .gitpermissions file
-git --git-dir "$git_dir" -C "$worktree" ls-files --full-name | xargs stat -c "%n:%a" > "$worktree/.gitpermissions"
+git --git-dir "$git_dir" -C "$worktree" ls-files --full-name -z | xargs -0 stat -c "%n:%a" > "$worktree/.gitpermissions"
 git add .gitpermissions
