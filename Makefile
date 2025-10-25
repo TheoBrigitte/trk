@@ -60,4 +60,5 @@ help: ## Display this help message
 	@printf "  make install                        # Install to ~/.local/bin\n"
 	@printf "  make build                          # Build the binary\n"
 	@printf "  make lint                           # Run all code quality checks\n"
+	@printf "  make test                           # Run all tests\n"
 	@printf "  make clean                          # Clean all artifacts\n"

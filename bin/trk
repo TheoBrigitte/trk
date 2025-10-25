@@ -40,7 +40,7 @@
 # Options:
 #   -f, --force  Force the command
 
-set -eu
+set -euo pipefail
 shopt -s extglob
 
 TRK_BIN="trk"
@@ -110,19 +110,18 @@ clone_command() {
 # Clone a repository and configure it to be managed by trk
 clone_normal() {
   unset GIT_DIR
-  $GIT_BIN clone --no-checkout "$@"
+  # Capture the output of git clone to extract the directory name
+  exec 3>&1
+  output="$($GIT_BIN clone --no-checkout "$@" 2>&1 | tee /dev/fd/3)"
+  exec 3>&-
+  directory="$(echo "$output" | sed -nE "s/Cloning into '(.+)'\.\.\./\1/p")"
 
-  repository="${!#}"
-  repository_no_git_suffix="${repository%.git}"
-  repository_basename="${repository_no_git_suffix##*/}"
-
-  cd "$repository_basename"
+  cd "$directory"
   GIT_DIR="$($GIT_BIN rev-parse --git-dir)"
 
   configure_repo
 
-  $GIT_BIN reset --mixed --quiet
-  $GIT_BIN ls-files --deleted | $GIT_BIN checkout --pathspec-from-file -
+  $GIT_BIN checkout --quiet
 }
 
 # Clone a repository with as a global repository with a specific worktree
