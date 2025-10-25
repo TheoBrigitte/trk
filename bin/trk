@@ -124,53 +124,38 @@ clone_normal() {
   $GIT_BIN checkout --quiet
 }
 
-# Clone a repository with as a global repository with a specific worktree
-# Worktree is left unchanged if there are local changes
+# Clone a repository as a global repository with a specific worktree
+# worktree is left unchanged if there are local changes
 clone_global() {
-  if [[ $# -lt 1 ]]; then
-    echo "Missing repository URL."
+  if [[ $# -gt 1 ]]; then
+    echo "Too many arguments for global clone. Use --worktree <path> <repository>"
     exit 1
-  fi
-
-  if [[ -d "$SHARE_GIT_DIR" ]]; then
-    if [[ "$FORCE" = true ]]; then
-      rm -rf "$SHARE_GIT_DIR"
-    else
-      echo "Repository already exists. Use -f to force."
-      exit 1
-    fi
   fi
 
   worktree="$(realpath -e "$WORKTREE")"
 
-  echo "Cloning repository with worktree $worktree"
-
   # Clone the repository
-  # Use standard cloning procedure and remove the temporary directory afterward to only keep git dir
-  # This is to avoid any --bare shenanigans, like refs/remotes/origin/ not being set.
-  temp_dir="$(mktemp -d -t trk-clone.XXXXXXXXXX)"
-  trap 'rm -rf "$temp_dir"' EXIT
-  $GIT_BIN clone --config core.sharedrepository=0600 --no-checkout --separate-git-dir="$SHARE_GIT_DIR" "$@" "$temp_dir"
+  mkdir -p "$SHARE_GIT_DIR"
+  $GIT_BIN clone --config core.sharedrepository=0600 --no-checkout --bare "$1" "$SHARE_GIT_DIR"
   configure_repo
   configure_repo_global "$worktree"
 
   # Get changes from the cloned repository into the index
-  $GIT_BIN reset --mixed --quiet
+  $GIT_BIN reset --quiet --mixed HEAD
 
   # Checkout files from the index to the worktree (if they don't exist yet)
-  $GIT_BIN ls-files --deleted | $GIT_BIN checkout --pathspec-from-file -
+  $GIT_BIN ls-files --deleted | $GIT_BIN checkout --quiet --pathspec-from-file -
 
-  # Check if there are local changes after checkout
-  modified_files="$($GIT_BIN ls-files --modified)"
-  if [[ -n "$modified_files" ]]; then
-    cat <<EOF
+  if ! output="$($GIT_BIN diff --name-status --exit-code HEAD)"; then
+    cat <<-EOF
 
-Local files differ from the cloned repository.
-Review and apply the changes manually.
+		Local files differ from the cloned repository. Review and apply the changes manually.
+		Changes:
+		$output
 
-$TRK_BIN checkout -- <file> # keep remote changes
-$TRK_BIN add <file>         # keep local changes
-EOF
+		$TRK_BIN checkout -- <file> # keep remote changes
+		$TRK_BIN add <file>         # keep local changes
+		EOF
     exit 1
   fi
 }
@@ -721,6 +706,7 @@ configure_repo_global() {
   worktree="$1"
   $GIT_BIN config --local core.worktree "$worktree"
   $GIT_BIN config --local status.showUntrackedFiles no
+  git_config_unset core.bare
 }
 
 # Remove trk configuration for the git repository
