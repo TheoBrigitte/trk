@@ -445,20 +445,30 @@ configure_repo() {
   "$GIT_BIN" config set --local trk.managed true 2>/dev/null
   "$GIT_BIN" config unset --local core.bare 2>/dev/null
 
-  # Setup permissions tracking if enabled
-  # Doing this after importing configuration in order to detect if permissions tracking is enabled in the imported configuration
-  permissions_enabled="$("$GIT_BIN" config get --local --default "false" trk.permissions)"
-  if "$PERMISSIONS_ENABLED" || [[ "$permissions_enabled" == "true" ]]; then
-    permissions_enable
-  else
-    permissions_disable
+  configure_repo_permissions
+}
+
+configure_repo_permissions() {
+  # User explicitly disabled permissions tracking
+  if ! "$PERMISSIONS_ENABLED"; then
+    return
   fi
+
+  ## Setup permissions tracking if enabled
+  ## Doing this after importing configuration in order to detect if permissions tracking is enabled in the imported configuration
+  #permissions_enabled="$("$GIT_BIN" config get --local --default "false" trk.permissions)"
+  #if [[ "$permissions_enabled" == "true" ]]; then
+  permissions_enable
+  #else
+  #  permissions_disable
+  #fi
 }
 
 # Configure the git repository encryption with git-crypt
 # - decrypt if a key file is provided
 # - initialize git-crypt if encryption is enabled but not set
 configure_repo_encryption() {
+  # User explicitly disabled encryption
   if ! "$ENCRYPTION_ENABLED"; then
     return
   fi
