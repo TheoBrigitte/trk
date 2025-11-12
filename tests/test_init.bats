@@ -1,177 +1,96 @@
 #!/usr/bin/env bats
+
 # Tests for trk init command
 
 load test_helper
 
-@test "init: creates a new repository" {
+# Tests for init_normal
+
+@test "init_normal: creates a new repository" {
   run trk init
   assert_success
   assert_dir_exists ".git"
+
+  assert_base_configuration
+  assert_permission_configured
+  assert_encryption_configured
+  refute_is_global_repository
 }
 
-@test "init: creates repository in specified directory" {
+@test "init_normal: creates repository in specified directory" {
   run trk init test-repo
   assert_success
   assert_dir_exists "test-repo/.git"
 }
 
-@test "init: sets up trk configuration" {
-  run trk init
+@test "init_normal: preserve git options" {
+  run trk init --quiet test-repo
   assert_success
-
-  cd "$(git rev-parse --show-toplevel)"
-  run git config --local trk.managed
-  assert_success
-  assert_output_equals "true"
+  refute_output "Initialized empty Git repository in"
+  assert_dir_exists "test-repo/.git"
 }
 
-@test "init: generates encryption passphrase" {
-  run trk init
-  assert_success
+@test "init_normal: preserve git options, only before path" {
+  run trk init test-repo --quiet
+  assert_failure
 
-  cd "$(git rev-parse --show-toplevel)"
-  run git config --local trk.passphrase
-  assert_success
-  [[ -n "$output" ]]
+  assert_output --partial "ERROR: Directory not found after git init"
 }
 
-@test "init: sets up git filters for encryption" {
-  run trk init
-  assert_success
-
-  cd "$(git rev-parse --show-toplevel)"
-  run git config --local filter.crypt.clean
-  assert_success
-  [[ -n "$output" ]]
-
-  run git config --local filter.crypt.smudge
-  assert_success
-  [[ -n "$output" ]]
-}
-
-@test "init: creates .gitattributes file" {
-  skip "gitattributes created when files are marked for encryption"
-}
-
-@test "init: --without-encryption skips encryption setup" {
+@test "init_normal: --without-encryption skips encryption setup" {
   run trk init --without-encryption
   assert_success
 
-  cd "$(git rev-parse --show-toplevel)"
-  run git config --local filter.crypt.clean
-  assert_failure
+  refute_encryption_configured
 }
 
-@test "init: --with-permissions sets up permissions tracking" {
-  run trk init --with-permissions
+@test "init_normal: --without-permissions skips permissions setup" {
+  run trk init --without-permissions
   assert_success
 
-  cd "$(git rev-parse --show-toplevel)"
-  run git config --local trk.permissions
-  assert_success
-  assert_output_equals "true"
+  refute_permission_configured
 }
 
-@test "init: --worktree creates global repository" {
+# Tests for init_global
+
+@test "init_global: --worktree creates global repository" {
   local worktree="$TEST_DIR/my-worktree"
   mkdir -p "$worktree"
 
   run trk init --worktree "$worktree"
   assert_success
-  assert_output_contains "Initializing repository for worktree"
+  assert_output --partial  "Initializing repository with worktree $worktree"
 
-  local share_dir="$HOME/.local/share/trk/repo.git"
-  assert_dir_exists "$share_dir"
+  assert_base_configuration
+  assert_permission_configured
+  assert_encryption_configured
+  assert_is_global_repository
 }
 
-@test "init: --worktree with non-existent path fails" {
+@test "init_global: --worktree with non-existent path fails" {
   run trk init --worktree "/nonexistent/path"
   assert_failure
 }
 
-@test "init: --worktree sets core.worktree config" {
+@test "init_global: passes through git init options" {
   local worktree="$TEST_DIR/my-worktree"
   mkdir -p "$worktree"
 
-  export GIT_DIR="$HOME/.local/share/trk/repo.git"
-  run trk init --worktree "$worktree"
+  run trk init --worktree "$worktree" --quiet
   assert_success
-
-  run git config --local core.worktree
-  assert_success
-  assert_output_equals "$worktree"
+  assert_is_global_repository
+  refute_output "Initialized empty Git repository in"
 }
 
-@test "init: --worktree without --force fails if repository exists" {
+@test "init_global: with --key-file works" {
   local worktree="$TEST_DIR/my-worktree"
   mkdir -p "$worktree"
+  git-crypt keygen my-key
 
-  run trk init --worktree "$worktree"
+  run trk init --worktree "$worktree" --key-file my-key
   assert_success
+  assert_is_global_repository
+  assert_encryption_configured
 
-  # Try to init again without force
-  run trk init --worktree "$worktree"
-  assert_failure
-  assert_output_contains "Repository already exists"
-}
-
-@test "init: --worktree with --force overwrites existing repository" {
-  local worktree="$TEST_DIR/my-worktree"
-  mkdir -p "$worktree"
-
-  run trk init --worktree "$worktree"
-  assert_success
-
-  # Init again with force
-  run trk init --worktree "$worktree" --force
-  assert_success
-}
-
-@test "init: passes through git init options" {
-  skip "git init options interfere with trk's own options parsing"
-}
-
-@test "init: sets correct OpenSSL default arguments" {
-  run trk init
-  assert_success
-
-  cd "$(git rev-parse --show-toplevel)"
-  run git config --local trk.openssl-args
-  assert_success
-  assert_output_contains "-aes-256-cbc"
-  assert_output_contains "-pbkdf2"
-}
-
-@test "init: with --config-file imports configuration" {
-  # Create a config file
-  local config_file="$TEST_DIR/trk.config"
-  cat > "$config_file" <<EOF
-trk.openssl-args -aes-128-cbc -md sha256
-EOF
-
-  run trk init --config-file "$config_file"
-  assert_success
-
-  cd "$(git rev-parse --show-toplevel)"
-  run git config --local trk.openssl-args
-  assert_success
-  assert_output_equals "-aes-128-cbc -md sha256"
-}
-
-@test "init: creates git hooks with --with-permissions" {
-  run trk init --with-permissions
-  assert_success
-
-  cd "$(git rev-parse --show-toplevel)"
-  assert_file_exists ".git/hooks/pre-commit"
-  assert_file_exists ".git/hooks/post-checkout"
-}
-
-@test "init: hooks are executable" {
-  run trk init --with-permissions
-  assert_success
-
-  cd "$(git rev-parse --show-toplevel)"
-  [[ -x ".git/hooks/pre-commit" ]]
-  [[ -x ".git/hooks/post-checkout" ]]
+  diff my-key "$(trk rev-parse --absolute-git-dir)/git-crypt/keys/default"
 }

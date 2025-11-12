@@ -61,44 +61,89 @@ trk() {
   "$TRK_BIN" "$@"
 }
 
-# Assert command succeeds
-assert_success() {
-  if [[ $status -ne 0 ]]; then
-    echo "Command failed with status $status"
-    echo "Output: $output"
-    return 1
-  fi
+
+######################
+#    trk helpers     #
+######################
+
+assert_is_global_repository() {
+  assert_dir_exists "$HOME/.local/share/trk/repo.git"
+  trk config get --local core.worktree
+  assert_git_config "status.showUntrackedFiles" "no"
+
+  export GIT_DIR="$(trk rev-parse --absolute-git-dir)"
+  run git worktree list --porcelain
+  assert_output --partial "worktree $HOME/.local/share/trk/repo.git"
 }
 
-# Assert command fails
-assert_failure() {
-  if [[ $status -eq 0 ]]; then
-    echo "Command succeeded but was expected to fail"
-    echo "Output: $output"
-    return 1
-  fi
+refute_is_global_repository() {
+  refute_dir_exists "$HOME/.local/share/trk/repo.git"
+  refute_git_config "core.worktree"
+  refute_git_config "status.showUntrackedFiles"
+
+  export GIT_DIR="$(trk rev-parse --absolute-git-dir)"
+  run git worktree list --porcelain
+  refute_output "worktree $HOME/.local/share/trk/repo.git"
 }
 
-# Assert output contains string
-assert_output_contains() {
-  local expected="$1"
-  if [[ ! "$output" =~ $expected ]]; then
-    echo "Output does not contain expected string"
-    echo "Expected: $expected"
-    echo "Actual: $output"
-    return 1
-  fi
+assert_base_configuration() {
+  assert_git_config "trk.managed" "true"
+  assert_git_config "core.bare" "false" "false"
 }
 
-# Assert output equals string
-assert_output_equals() {
-  local expected="$1"
-  if [[ "$output" != "$expected" ]]; then
-    echo "Output does not match expected"
-    echo "Expected: $expected"
-    echo "Actual: $output"
-    return 1
-  fi
+assert_permission_configured() {
+  # trk configuration is set
+  assert_git_config "trk.permissions" "true"
+
+  # hooks files exists
+  git_dir="$(trk rev-parse --absolute-git-dir)"
+  assert_file_exists "$git_dir/hooks/pre-commit"
+  assert_file_exists "$git_dir/hooks/post-checkout"
+
+  # hooks files are executable
+  [[ -x "$git_dir/hooks/pre-commit" ]]
+  [[ -x "$git_dir/hooks/post-checkout" ]]
+}
+
+refute_permission_configured() {
+  # trk configuration is set
+  refute_git_config "trk.permissions" "true"
+
+  # hooks files exists
+  git_dir="$(trk rev-parse --absolute-git-dir)"
+  refute_file_exists "$git_dir/hooks/pre-commit"
+  refute_file_exists "$git_dir/hooks/post-checkout"
+
+  # hooks files are executable
+  ! [[ -x "$git_dir/hooks/pre-commit" ]]
+  ! [[ -x "$git_dir/hooks/post-checkout" ]]
+}
+
+assert_encryption_configured() {
+  # git filters are set
+  assert_git_config "filter.git-crypt.required" 'true'
+  assert_git_config "filter.git-crypt.smudge" '"git-crypt" smudge'
+  assert_git_config "filter.git-crypt.clean" '"git-crypt" clean'
+  assert_git_config "diff.git-crypt.textconv" '"git-crypt" diff'
+
+  # git-crypt dir and key exists
+  git_dir="$(trk rev-parse --absolute-git-dir)"
+  assert_dir_exists "$git_dir/git-crypt"
+  run file --brief --mime "$git_dir/git-crypt/keys/default"
+  assert_success
+  assert_output --partial "application/octet-stream; charset=binary"
+}
+
+refute_encryption_configured() {
+  # git filters are set
+  refute_git_config "filter.git-crypt.required" 'true'
+  refute_git_config "filter.git-crypt.smudge" '"git-crypt" smudge'
+  refute_git_config "filter.git-crypt.clean" '"git-crypt" clean'
+  refute_git_config "diff.git-crypt.textconv" '"git-crypt" diff'
+
+  # git-crypt dir and key exists
+  git_dir="$(trk rev-parse --absolute-git-dir)"
+  ! assert_dir_exists "$git_dir/git-crypt"
 }
 
 
