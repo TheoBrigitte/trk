@@ -211,7 +211,11 @@ init_normal() {
 
   # Change to the repository directory if not current directory
   # Use last git init argument as directory
-  [[ "$#" -gt 0 ]] && cd "${@: -1}"
+  if [[ "$#" -gt 0 ]]; then
+    repository_dir="${!#}"
+    test -d "$repository_dir" || error "Directory not found after git init"
+    cd "$repository_dir"
+  fi
 
   export GIT_DIR="$("$GIT_BIN" rev-parse --git-dir)"
 
