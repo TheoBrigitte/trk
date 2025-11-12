@@ -113,15 +113,19 @@ clone_command() {
 
 # Clone a repository and configure it to be managed by trk
 clone_normal() {
+  # Unset GIT_DIR to make git clone to work with the current directory
   unset GIT_DIR
+
   # Capture the output of git clone to extract the directory name
+  # TODO: could be replaced by using a tempoary directory and moving it afterward
+  # since git clone should only create a single directory
   exec 3>&1
   output="$("$GIT_BIN" clone --no-checkout "$@" 2>&1 | tee /dev/fd/3)"
   exec 3>&-
   directory="$(echo "$output" | sed -nE "s/Cloning into '(.+)'\.\.\./\1/p")"
 
   cd "$directory"
-  GIT_DIR="$("$GIT_BIN" rev-parse --git-dir)"
+  export GIT_DIR="$("$GIT_BIN" rev-parse --git-dir)"
 
   configure_repo
 
@@ -192,7 +196,9 @@ init_command() {
 }
 
 init_normal() {
+  # Unset GIT_DIR to make git init to work with the current directory
   unset GIT_DIR
+
   "$GIT_BIN" init "$@"
 
   # Change to the repository directory if not current directory
@@ -201,6 +207,7 @@ init_normal() {
   if "$ENCRYPTION_ENABLED"; then
     "$GIT_CRYPT_BIN" init
   fi
+  export GIT_DIR="$("$GIT_BIN" rev-parse --git-dir)"
 
   configure_repo
 }
@@ -217,7 +224,6 @@ init_global() {
   # The git dir is set by GIT_DIR environment variable
   temp_dir="$(mktemp -d -t trk-init.XXXXXXXXXX)"
   trap 'rm -rf "$temp_dir"' EXIT
-  export GIT_DIR="$SHARED_GIT_DIR"
   "$GIT_BIN" init --shared=umask "$temp_dir/repo" "$@"
 
   if "$ENCRYPTION_ENABLED"; then
@@ -263,8 +269,6 @@ setup_command() {
 # Options:
 #   --prune    Remove all trk related configuration and files from the repository
 unsetup_command() {
-  unset GIT_DIR
-
   if "$PRUNE"; then
     "$GIT_BIN" config remove-section --local "trk" 2>/dev/null || true
     git_root="$("$GIT_BIN" rev-parse --show-toplevel)"
@@ -400,14 +404,12 @@ version_command() {
 
 # Enable permission tracking
 permissions_enable() {
-  GIT_DIR="$("$GIT_BIN" rev-parse --git-dir)"
   cp -i "$HOOKS_DIR/"* "$GIT_DIR/hooks/"
   "$GIT_BIN" config set --local trk.permissions true
 }
 
 # Disable permission tracking
 permissions_disable() {
-  GIT_DIR="$("$GIT_BIN" rev-parse --git-dir)"
   rm -f "$GIT_DIR/hooks/pre-commit" "$GIT_DIR/hooks/post-checkout"
   "$GIT_BIN" config set --local trk.permissions false
 }
