@@ -32,7 +32,7 @@
 #   -h, --help            Show help for any command
 
 
-set -euo pipefail
+set -aeuo pipefail
 shopt -s extglob
 
 # Paths
@@ -46,6 +46,7 @@ PERMISSIONS_ENABLED=true
 KEY_FILE=""
 PRUNE=false
 WORKTREE=""
+set +a
 
 # Binaries dependencies
 GIT_BIN=git
@@ -68,7 +69,7 @@ help_command() {
   # 2. /^([^#]|$)/{p;  -> Print all subsequent lines starting with "#" until a line not starting with "#" is found
   # 3. /^([^#]|$)/q}   -> Force quit after the first non-comment line to avoid printing other usage sections
   # 4. '$d; s/#\s\?//' -> Remove the last line (non-comment) and strip leading "# " from each line
-  sed -Ene '/#\s?Usage: '"$TRK_BIN $*"'/,/^([^#]|$)/{p; /^([^#]|$)/q}' "$0" | sed -e '$d; s/#\s\?//'
+  sed -Ene '/#\s?Usage: '"$TRK_BIN $*"'/,/^([^#]|$)/{p; /^([^#]|$)/q}' "$0" | sed -e '$d; s/#\s\?//' | envsubst
   exit
 }
 
@@ -450,9 +451,7 @@ configure_repo_encryption() {
   # Check if encryption is currently set in the repository
   encryption_set="$("$GIT_BIN" config get --local --default "false" filter.crypt.required)"
 
-  echo config crypt
   if [[ -n "$KEY_FILE" ]]; then
-    echo unlocking
     # If a key file was provided, decrypt the repository
     "$GIT_CRYPT_BIN" unlock "$KEY_FILE"
     return
