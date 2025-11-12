@@ -104,6 +104,13 @@ join_by() {
 #   --worktree <path>     Set the worktree path
 #                         When using this option, the repository is globally available and cloned in $SHARED_GIT_DIR
 clone_command() {
+  if [[ -z "$KEY_FILE" ]]; then
+    # This is to avoid generating an new encryption key
+    # when cloning the repository in order to prevent misconfiguration.
+    # Encryption can be setup explicitly after cloning.
+    ENCRYPTION_ENABLED=false
+  fi
+
   if [[ -n "$WORKTREE" ]]; then
     clone_global "$@"
   else
@@ -204,12 +211,10 @@ init_normal() {
   # Change to the repository directory if not current directory
   [[ "$#" -gt 0 ]] && cd "${@: -1}"
 
-  if "$ENCRYPTION_ENABLED"; then
-    "$GIT_CRYPT_BIN" init
-  fi
   export GIT_DIR="$("$GIT_BIN" rev-parse --git-dir)"
 
   configure_repo
+  configure_repo_encryption
 }
 
 # Initialize a new repository as global repository with a specific worktree
@@ -232,6 +237,7 @@ init_global() {
 
   configure_repo
   configure_repo_global "$worktree"
+  configure_repo_encryption
 }
 
 ##########################################
@@ -450,6 +456,10 @@ configure_repo() {
 # - decrypt if a key file is provided
 # - initialize git-crypt if encryption is enabled but not set
 configure_repo_encryption() {
+  if ! "$ENCRYPTION_ENABLED"; then
+    return
+  fi
+
   # Check if encryption is currently set in the repository
   encryption_set="$("$GIT_BIN" config get --local --default "false" filter.crypt.required)"
 
@@ -459,7 +469,7 @@ configure_repo_encryption() {
     return
   fi
 
-  if "$ENCRYPTION_ENABLED" && [[ "$encryption_set" != "true" ]]; then
+  if [[ "$encryption_set" != "true" ]]; then
     # If encryption was requested but not set, initialize git-crypt
     "$GIT_CRYPT_BIN" init
   fi
