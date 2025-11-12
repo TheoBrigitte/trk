@@ -126,9 +126,7 @@ clone_normal() {
 
   "$GIT_BIN" checkout --quiet
 
-  if [[ "$ENCRYPTION_ENABLED" && -n "$KEY_FILE" ]]; then
-    "$GIT_CRYPT_BIN" unlock "$KEY_FILE"
-  fi
+  configure_repo_encryption
 }
 
 # Clone a repository as a global repository with a specific worktree
@@ -165,16 +163,14 @@ clone_global() {
 		$TRK_BIN add <file>         # keep local changes
 		EOF
 
-    if [[ "$ENCRYPTION_ENABLED" && -n "$KEY_FILE" ]]; then
+    if "$ENCRYPTION_ENABLED" && [[ -n "$KEY_FILE" ]]; then
       echo "$TRK_BIN crypt unlock $KEY_FILE # to decrypt files after resolving conflicts"
     fi
 
     exit 1
   fi
 
-  if [[ "$ENCRYPTION_ENABLED" && -n "$KEY_FILE" ]]; then
-    "$GIT_CRYPT_BIN" unlock "$KEY_FILE"
-  fi
+  configure_repo_encryption
 }
 
 # Usage: trk init [ --worktree <path> ] <git options>...
@@ -255,11 +251,13 @@ crypt_status_command() {
 #   --with[out]-permissions  Setup permission tracking for the repository (default off)
 setup_command() {
   configure_repo
+  configure_repo_encryption
 }
 
 # Usage: trk unsetup
 #
 # Unsetup the repository from trk
+# Encryption cannot be disabled
 #
 # Options:
 #   --prune    Remove all trk related configuration and files from the repository
@@ -449,6 +447,27 @@ configure_repo() {
     permissions_enable
   else
     permissions_disable
+  fi
+}
+
+# Configure the git repository encryption with git-crypt
+# - decrypt if a key file is provided
+# - initialize git-crypt if encryption is enabled but not set
+configure_repo_encryption() {
+  # Check if encryption is currently set in the repository
+  encryption_set="$("$GIT_BIN" config get --local --default "false" filter.crypt.required)"
+
+  echo config crypt
+  if [[ -n "$KEY_FILE" ]]; then
+    echo unlocking
+    # If a key file was provided, decrypt the repository
+    "$GIT_CRYPT_BIN" unlock "$KEY_FILE"
+    return
+  fi
+
+  if "$ENCRYPTION_ENABLED" && [[ "$encryption_set" != "true" ]]; then
+    # If encryption was requested but not set, initialize git-crypt
+    "$GIT_CRYPT_BIN" init
   fi
 }
 
