@@ -116,7 +116,7 @@ load test_helper
   cd test-remote
   run git config --local trk.managed
   assert_success
-  assert_output_equals "true"
+  assert_output "true"
 }
 
 @test "clone: generates encryption passphrase" {
@@ -208,7 +208,7 @@ load test_helper
   cd "$TEST_DIR"
   run trk clone --worktree "$worktree" "$remote"
   assert_failure
-  assert_output_contains "Local files differ from the cloned repository. Review and apply the changes manually."
+  assert_output --partial  "Local files differ from the cloned repository. Review and apply the changes manually."
 }
 
 @test "clone: with --config-file imports configuration" {
@@ -237,7 +237,7 @@ EOF
   cd test-remote
   run git config --local trk.openssl-args
   assert_success
-  assert_output_equals "-aes-128-cbc -md sha256"
+  assert_output "-aes-128-cbc -md sha256"
 }
 
 @test "clone: passes through git clone options" {

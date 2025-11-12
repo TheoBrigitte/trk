@@ -11,7 +11,7 @@ load test_helper
 
   run git config --local trk.managed
   assert_success
-  assert_output_equals "true"
+  assert_output "true"
 }
 
 @test "setup: generates encryption passphrase" {
@@ -58,7 +58,7 @@ load test_helper
 
   run git config --local trk.permissions
   assert_success
-  assert_output_equals "true"
+  assert_output "true"
 }
 
 @test "setup: with --config-file imports configuration" {
@@ -76,11 +76,11 @@ EOF
 
   run git config --local trk.passphrase
   assert_success
-  assert_output_equals "test-passphrase-123"
+  assert_output "test-passphrase-123"
 
   run git config --local trk.openssl-args
   assert_success
-  assert_output_equals "-aes-128-cbc -md sha256"
+  assert_output "-aes-128-cbc -md sha256"
 }
 
 @test "setup: fails in non-git repository" {
@@ -118,7 +118,7 @@ EOF
 
   run git config --local trk.managed
   assert_success
-  assert_output_equals "false"
+  assert_output "false"
 }
 
 @test "unsetup: disables encryption filters" {
@@ -221,7 +221,7 @@ EOF
 
   run git config --local trk.managed
   assert_success
-  assert_output_equals "true"
+  assert_output "true"
 }
 
 @test "setup: preserves existing passphrase if present" {
@@ -233,7 +233,7 @@ EOF
 
   run git config --local trk.passphrase
   assert_success
-  assert_output_equals "existing-passphrase"
+  assert_output "existing-passphrase"
 }
 
 @test "setup: updates filter configuration" {

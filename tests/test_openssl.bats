@@ -9,8 +9,8 @@ load test_helper
 
   run trk openssl get-args
   assert_success
-  assert_output_contains "-aes-256-cbc"
-  assert_output_contains "-pbkdf2"
+  assert_output --partial  "-aes-256-cbc"
+  assert_output --partial  "-pbkdf2"
 }
 
 @test "openssl get-args: fails without encryption setup" {
@@ -35,7 +35,7 @@ load test_helper
 
   run trk openssl get-args
   assert_success
-  assert_output_equals "-aes-128-cbc -md sha256"
+  assert_output "-aes-128-cbc -md sha256"
 }
 
 @test "openssl set-args: updates git config" {
@@ -47,7 +47,7 @@ load test_helper
 
   run git config --local trk.openssl-args
   assert_success
-  assert_output_equals "-aes-192-cbc -md sha512"
+  assert_output "-aes-192-cbc -md sha512"
 }
 
 @test "openssl set-args: requires arguments" {
@@ -80,8 +80,8 @@ load test_helper
 
   run trk openssl get-args
   assert_success
-  assert_output_contains "-aes-256-cbc"
-  assert_output_contains "-pbkdf2"
+  assert_output --partial  "-aes-256-cbc"
+  assert_output --partial  "-pbkdf2"
 }
 
 @test "openssl reset-args: fails without encryption setup" {
@@ -226,7 +226,7 @@ load test_helper
 
   run trk openssl get-args
   assert_success
-  assert_output_equals "-aes-128-cbc -md sha256 -pbkdf2"
+  assert_output "-aes-128-cbc -md sha256 -pbkdf2"
 }
 
 @test "openssl get-args: shows stored value not computed" {
@@ -243,7 +243,7 @@ load test_helper
   # Should show modified value
   run trk openssl get-args
   assert_success
-  assert_output_equals "modified-args"
+  assert_output "modified-args"
 }
 
 @test "openssl: default args use pbkdf2" {
@@ -252,7 +252,7 @@ load test_helper
 
   run trk openssl get-args
   assert_success
-  assert_output_contains "-pbkdf2"
+  assert_output --partial  "-pbkdf2"
 }
 
 @test "openssl: args can include multiple options" {
@@ -265,7 +265,7 @@ load test_helper
 
   run trk openssl get-args
   assert_success
-  assert_output_equals "$complex_args"
+  assert_output "$complex_args"
 }
 
 @test "openssl set-args: accepts args with equal signs" {

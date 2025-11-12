@@ -18,7 +18,7 @@ load test_helper
 
   run trk config export
   assert_success
-  assert_output_contains "trk.passphrase"
+  assert_output --partial  "trk.passphrase"
 }
 
 @test "config export: includes openssl-args" {
@@ -27,7 +27,7 @@ load test_helper
 
   run trk config export
   assert_success
-  assert_output_contains "trk.openssl-args"
+  assert_output --partial  "trk.openssl-args"
 }
 
 @test "config export: includes managed flag" {
@@ -36,7 +36,7 @@ load test_helper
 
   run trk config export
   assert_success
-  assert_output_contains "trk.managed"
+  assert_output --partial  "trk.managed"
 }
 
 @test "config export: includes permissions if enabled" {
@@ -45,7 +45,7 @@ load test_helper
 
   run trk config export
   assert_success
-  assert_output_contains "trk.permissions"
+  assert_output --partial  "trk.permissions"
 }
 
 @test "config export: outputs in key=value format" {
@@ -89,11 +89,11 @@ EOF
 
   run git config --local trk.passphrase
   assert_success
-  assert_output_equals "imported-passphrase"
+  assert_output "imported-passphrase"
 
   run git config --local trk.openssl-args
   assert_success
-  assert_output_equals "-aes-128-cbc -md sha256"
+  assert_output "-aes-128-cbc -md sha256"
 }
 
 @test "config import: requires file argument" {
@@ -158,7 +158,7 @@ EOF
 
   run git config --local trk.test1
   assert_success
-  assert_output_equals "value1"
+  assert_output "value1"
 }
 
 @test "config import: handles comments" {
@@ -177,7 +177,7 @@ EOF
 
   run git config --local trk.passphrase
   assert_success
-  assert_output_equals "test-pass"
+  assert_output "test-pass"
 }
 
 @test "config import: handles blank lines" {
@@ -253,7 +253,7 @@ EOF
 
   run git config --local trk.openssl-args
   assert_success
-  assert_output_equals "-aes-256-cbc -md sha256 -pbkdf2"
+  assert_output "-aes-256-cbc -md sha256 -pbkdf2"
 }
 
 @test "config import: handles values with special characters" {
@@ -330,5 +330,5 @@ EOF
   # Valid line should still be imported
   run git config --local trk.passphrase
   assert_success
-  assert_output_equals "valid"
+  assert_output "valid"
 }

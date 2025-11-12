@@ -17,7 +17,7 @@ load test_helper
 
   run git config --local trk.permissions
   assert_success
-  assert_output_equals "true"
+  assert_output "true"
 }
 
 @test "permissions refresh: stores current permissions" {
@@ -91,7 +91,7 @@ load test_helper
 
   run trk permissions status
   assert_success
-  assert_output_contains "script.sh"
+  assert_output --partial  "script.sh"
 }
 
 @test "permissions status: shows no changes when permissions match" {

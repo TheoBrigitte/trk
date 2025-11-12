@@ -14,8 +14,16 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
+######################
+# Setup and teardown #
+######################
+
 # Setup function called before each test
 setup() {
+  # Load Bats helpers
+  load 'bats/support/load'
+  load 'bats/assert/load'
+
   # Create a unique test directory
   TEST_DIR="$(mktemp -d -t trk-test.XXXXXXXXXX)"
   cd "$TEST_DIR" || exit 1
@@ -93,10 +101,23 @@ assert_output_equals() {
   fi
 }
 
+
+######################
+#   Assert helpers   #
+######################
+
 # Assert file exists
 assert_file_exists() {
   local file="$1"
   if [[ ! -f "$file" ]]; then
+    echo "File does not exist: $file"
+    return 1
+  fi
+}
+
+refute_file_exists() {
+  local file="$1"
+  if [[ -f "$file" ]]; then
     echo "File does not exist: $file"
     return 1
   fi
@@ -107,6 +128,15 @@ assert_dir_exists() {
   local dir="$1"
   if [[ ! -d "$dir" ]]; then
     echo "Directory does not exist: $dir"
+    return 1
+  fi
+}
+
+# Assert directory exists
+refute_dir_exists() {
+  local dir="$1"
+  if [[ -d "$dir" ]]; then
+    echo "Directory should not exist: $dir"
     return 1
   fi
 }
@@ -127,13 +157,24 @@ assert_file_contains() {
 assert_git_config() {
   local key="$1"
   local expected="$2"
+  local default="${3-}"
   local actual
-  actual="$(git config "$key")"
+  if ! actual="$(trk config get --local --default "$default" "$key")"; then
+    echo "trk config get --local '$key' --default '$default', should have failed"
+    return 1
+  fi
+
   if [[ "$actual" != "$expected" ]]; then
-    echo "Git config mismatch"
-    echo "Key: $key"
-    echo "Expected: $expected"
-    echo "Actual: $actual"
+    echo "trk configuration '$key' expected '$expected' got '$actual'"
+    return 1
+  fi
+}
+
+refute_git_config() {
+  local key="$1"
+  local actual
+  if trk config get --local "$key" &>/dev/null; then
+    echo "trk config get --local '$key', should have failed"
     return 1
   fi
 }

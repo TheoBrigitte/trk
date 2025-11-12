@@ -141,9 +141,9 @@ load test_helper
 
   run trk list encrypted
   assert_success
-  assert_output_contains "secret.txt"
-  assert_output_contains "*.key"
-  assert_output_contains "passwords.txt"
+  assert_output --partial  "secret.txt"
+  assert_output --partial  "*.key"
+  assert_output --partial  "passwords.txt"
 }
 
 @test "list encrypted: shows empty list when nothing marked" {

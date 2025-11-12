@@ -192,11 +192,11 @@ load test_helper
   # Verify configuration matches
   run trk openssl get-args
   assert_success
-  assert_output_equals "-aes-128-cbc -md sha256 -pbkdf2"
+  assert_output "-aes-128-cbc -md sha256 -pbkdf2"
 
   run git config --local trk.permissions
   assert_success
-  assert_output_equals "true"
+  assert_output "true"
 }
 
 @test "integration: multiple encrypted patterns" {
@@ -295,23 +295,23 @@ load test_helper
 
   run trk worktree
   assert_success
-  assert_output_contains "worktree:"
-  assert_output_contains "gitdir:"
+  assert_output --partial  "worktree:"
+  assert_output --partial  "gitdir:"
 }
 
 @test "integration: version command shows versions" {
   run trk version
   assert_success
-  assert_output_contains "trk version"
-  assert_output_contains "Git version"
-  assert_output_contains "OpenSSL version"
+  assert_output --partial  "trk version"
+  assert_output --partial  "Git version"
+  assert_output --partial  "OpenSSL version"
 }
 
 @test "integration: help command shows usage" {
   run trk help
   assert_success
-  assert_output_contains "Usage:"
-  assert_output_contains "Commands:"
+  assert_output --partial  "Usage:"
+  assert_output --partial  "Commands:"
 }
 
 @test "integration: git commands work through trk" {
@@ -327,7 +327,7 @@ load test_helper
 
   run trk log --oneline
   assert_success
-  assert_output_contains "Test commit"
+  assert_output --partial  "Test commit"
 
   run trk status
   assert_success
@@ -401,6 +401,6 @@ load test_helper
   # List all encrypted
   run trk list encrypted
   assert_success
-  assert_output_contains "secret-1.txt"
-  assert_output_contains "secret-50.txt"
+  assert_output --partial  "secret-1.txt"
+  assert_output --partial  "secret-50.txt"
 }
