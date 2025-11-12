@@ -265,11 +265,11 @@ unsetup_command() {
   unset GIT_DIR
 
   if "$PRUNE"; then
-    git_config_unset trk
+    "$GIT_BIN" config remove-section --local "trk" 2>/dev/null || true
     git_root="$("$GIT_BIN" rev-parse --show-toplevel)"
     rm -f "$git_root/.gitattributes" "$git_root/.gitpermissions"
   else
-    "$GIT_BIN" config --local trk.managed false
+    "$GIT_BIN" config set --local trk.managed false
   fi
 
   #encryption_disable
@@ -401,14 +401,14 @@ version_command() {
 permissions_enable() {
   GIT_DIR="$("$GIT_BIN" rev-parse --git-dir)"
   cp -i "$HOOKS_DIR/"* "$GIT_DIR/hooks/"
-  "$GIT_BIN" config --local trk.permissions true
+  "$GIT_BIN" config set --local trk.permissions true
 }
 
 # Disable permission tracking
 permissions_disable() {
   GIT_DIR="$("$GIT_BIN" rev-parse --git-dir)"
   rm -f "$GIT_DIR/hooks/pre-commit" "$GIT_DIR/hooks/post-checkout"
-  "$GIT_BIN" config --local trk.permissions false
+  "$GIT_BIN" config set --local trk.permissions false
 }
 
 # This attribute is used to mark files that should be encrypted
@@ -424,26 +424,19 @@ generate_attribute() {
 #            Configuration               #
 ##########################################
 
-# Detect if the git version is before 2.46
-# This is needed to handle the different behavior of `git config`
-is_git_before_2_46() {
-  version="$("$GIT_BIN" --version | awk '{print $3}')"
-  printf '%s\n' "$version" "2.46" | sort -C -V
-}
-
 # Configure the git repository with
 # - trk settings:
 #   - permissions
 #     - hooks
 configure_repo() {
   # Always set trk.managed to true
-  "$GIT_BIN" config --local trk.managed true 2>/dev/null
-  "$GIT_BIN" config --local core.bare false 2>/dev/null
+  "$GIT_BIN" config set --local trk.managed true 2>/dev/null
+  "$GIT_BIN" config unset --local core.bare 2>/dev/null
 
   # Setup permissions tracking if enabled
   # Doing this after importing configuration in order to detect if permissions tracking is enabled in the imported configuration
-  permissions_enabled="$("$GIT_BIN" config --local --default '' trk.permissions)"
-  if "$PERMISSIONS_ENABLED" || [[ "$permissions_enabled" = "true" ]]; then
+  permissions_enabled="$("$GIT_BIN" config get --local --default "false" trk.permissions)"
+  if "$PERMISSIONS_ENABLED" || [[ "$permissions_enabled" == "true" ]]; then
     permissions_enable
   else
     permissions_disable
@@ -476,18 +469,8 @@ configure_repo_encryption() {
 # - hide untracked files
 configure_repo_global() {
   worktree="$1"
-  "$GIT_BIN" config --local core.worktree "$worktree"
-  "$GIT_BIN" config --local status.showUntrackedFiles no
-  git_config_unset core.bare
-}
-
-# Remove trk configuration for the git repository
-git_config_unset() {
-  if is_git_before_2_46; then
-    "$GIT_BIN" config --local --remove-section "$1" 2>/dev/null || true
-  else
-    "$GIT_BIN" config remove-section --local "$1" 2>/dev/null || true
-  fi
+  "$GIT_BIN" config set --local core.worktree "$worktree"
+  "$GIT_BIN" config set --local status.showUntrackedFiles no
 }
 
 # Ensure that the required binaries are available
