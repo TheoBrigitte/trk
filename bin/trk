@@ -235,11 +235,8 @@ init_global() {
   # The git dir is set by GIT_DIR environment variable
   temp_dir="$(mktemp -d -t trk-init.XXXXXXXXXX)"
   trap 'rm -rf "$temp_dir"' EXIT
+  mkdir -p "$(dirname "$SHARED_GIT_DIR")"
   "$GIT_BIN" init --shared=umask "$temp_dir/repo" "$@"
-
-  if "$ENCRYPTION_ENABLED"; then
-    "$GIT_CRYPT_BIN" init
-  fi
 
   configure_repo
   configure_repo_global "$worktree"
