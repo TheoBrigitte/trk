@@ -12,6 +12,14 @@ It is shamelessly inspired from [yadm](https://github.com/yadm-dev/yadm) and [tr
 
 Encryption is done via OpenSSL and leverage [Git clean/smudge filters](https://git-scm.com/book/ms/v2/Customizing-Git-Git-Attributes#filters_a) to encrypt and decrypt files seamlessly, meaning that encrypted files are stored in the repository and decrypted on the fly when checked out.
 
+# Why trk ? Another dotfiles manager ?
+
+Trk is more than a dotfiles manager, it can be used to manage any Git repository with encryption capabilities. There are many solutions out there for managing dotfiles and encryption in Git but none of them felt right:
+
+- git-crypt is great and does the encryption job well, but it is not very pratical when it comes to actually managing encrypted files and handling of .gitattributes which must be done manually.
+- chezmoi seems like a good tool overall but does not support transparent encryption of files.
+- yadm is also very powerfull but does not provide anything on top of git-crypt and handle permissions in a very specific way
+
 ## Quick start
 
 Grab the script and install it in your path:
@@ -88,3 +96,9 @@ trk clone --worktree <path> <url>
 ```
 
 You can then work with the repository using `trk` as you would with a regular Git repository, encryption works the same way.
+
+### Alternatives
+
+- https://github.com/AGWA/git-crypt
+- https://github.com/elasticdog/transcrypt
+- https://github.com/sobolevn/git-secret
