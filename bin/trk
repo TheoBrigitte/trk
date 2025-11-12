@@ -3,7 +3,7 @@
 # Author: Théo Brigitte
 # Date: 2025-10-12
 
-# Usage: trk <command> [options]
+# Usage: trk <command> [ <options> ] [ <git options> ]
 #
 # Git wrapper for managing a repository and encrypting files.
 #
@@ -93,7 +93,7 @@ join_by() {
 #         Git override commands          #
 ##########################################
 
-# Usage: trk clone [ --worktree <path> ] <git options>...
+# Usage: trk clone [ <options> ] [ <git options> ]
 #
 # Clone a repository
 # Worktree is left unchanged if there are local changes
@@ -185,11 +185,12 @@ clone_global() {
   configure_repo_encryption
 }
 
-# Usage: trk init [ --worktree <path> ] <git options>...
+# Usage: trk init [ <options> ] [ <git options> ]
 #
 # Initialize a new repository as global repository with a specific worktree
 #
 # Options:
+#   --key-file <path>        Path to the encryption key
 #   --worktree <path>        Set the worktree path
 #                            When using this option, the repository is globally available and created in $SHARED_GIT_DIR
 #   --with[out]-encryption   Setup encryption for the repository (default on)
@@ -209,6 +210,7 @@ init_normal() {
   "$GIT_BIN" init "$@"
 
   # Change to the repository directory if not current directory
+  # Use last git init argument as directory
   [[ "$#" -gt 0 ]] && cd "${@: -1}"
 
   export GIT_DIR="$("$GIT_BIN" rev-parse --git-dir)"
@@ -255,7 +257,7 @@ crypt_status_command() {
 #             Trk commands               #
 ##########################################
 
-# Usage: trk setup
+# Usage: trk setup [ <options> ]
 #
 # Setup the repository to use trk
 #
@@ -267,7 +269,7 @@ setup_command() {
   configure_repo_encryption
 }
 
-# Usage: trk unsetup
+# Usage: trk unsetup [ <options ]
 #
 # Unsetup the repository from trk
 # Encryption cannot be disabled
@@ -549,8 +551,9 @@ main() {
         WORKTREE="${2-}"
         [[ -z "$WORKTREE" ]] && error "--worktree requires an argument"
         shift;;
-      -?*)
-        error "Unknown option: $1";;
+      --)
+        shift
+        break;;
       *)
         args+=("$1");;
     esac
@@ -580,7 +583,7 @@ main() {
     error "Unknown command: ${cmd_parts[*]}"
   fi
 
-  if "$show_help"; then
+  if "$show_help" || [[ "$cmd" == "help_command" ]]; then
     # Display help message and exit.
     help_command "${cmd_parts[*]}"
   fi
