@@ -116,6 +116,8 @@ clone_command() {
   else
     clone_normal "$@"
   fi
+
+  configure_repo_encryption
 }
 
 # Clone a repository and configure it to be managed by trk
@@ -127,7 +129,10 @@ clone_normal() {
   # TODO: could be replaced by using a tempoary directory and moving it afterward
   # since git clone should only create a single directory
   exec 3>&1
+
+  # Clone the repository
   output="$("$GIT_BIN" clone --no-checkout "$@" 2>&1 | tee /dev/fd/3)"
+
   exec 3>&-
   directory="$(echo "$output" | sed -nE "s/Cloning into '(.+)'\.\.\./\1/p")"
 
@@ -137,8 +142,6 @@ clone_normal() {
   configure_repo
 
   "$GIT_BIN" checkout --quiet
-
-  configure_repo_encryption
 }
 
 # Clone a repository as a global repository with a specific worktree
@@ -151,8 +154,9 @@ clone_global() {
   worktree="$(realpath -e "$WORKTREE")"
   remote_repo="$1"
 
-  # Clone the repository
   mkdir -p "$SHARED_GIT_DIR"
+
+  # Clone the repository
   "$GIT_BIN" clone --config core.sharedrepository=umask --no-checkout --bare "$remote_repo" "$SHARED_GIT_DIR"
 
   configure_repo
@@ -181,8 +185,6 @@ clone_global() {
 
     exit 1
   fi
-
-  configure_repo_encryption
 }
 
 # Usage: trk init [ <options> ] [ <git options> ]
@@ -201,6 +203,8 @@ init_command() {
   else
     init_normal "$@"
   fi
+
+  configure_repo_encryption
 }
 
 init_normal() {
@@ -217,10 +221,10 @@ init_normal() {
     cd "$repository_dir"
   fi
 
+  # Initialize the repository
   export GIT_DIR="$("$GIT_BIN" rev-parse --git-dir)"
 
   configure_repo
-  configure_repo_encryption
 }
 
 # Initialize a new repository as global repository with a specific worktree
@@ -236,11 +240,12 @@ init_global() {
   temp_dir="$(mktemp -d -t trk-init.XXXXXXXXXX)"
   trap 'rm -rf "$temp_dir"' EXIT
   mkdir -p "$(dirname "$SHARED_GIT_DIR")"
+
+  # Initialize the repository
   "$GIT_BIN" init --shared=umask "$temp_dir/repo" "$@"
 
   configure_repo
   configure_repo_global "$worktree"
-  configure_repo_encryption
 }
 
 ##########################################
