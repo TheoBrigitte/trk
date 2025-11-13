@@ -202,16 +202,17 @@ git_capture_worktree() {
   unset GIT_DIR
 
   # Capture the trace output of git to extract the worktree directory name
-  exec 3>&1
+  # fd/4 is used to capture stdout and stderr of git while fd/3 is used for trace
+  exec 4>&1
 
   # Run git
-  # GIT_TRACE2=2 writes trace to stderr
-  output="$(GIT_TRACE2=2 "$GIT_BIN" "$@" 2>&1 | tee /dev/fd/3)"
+  # GIT_TRACE2=3 writes trace to fd/3
+  output="$(GIT_TRACE2=3 "$GIT_BIN" "$@" 3>&1 &>/dev/fd/4)"
 
-  exec 3>&-
+  exec 4>&-
   directory="$(echo "$output" | awk '$3 == "worktree" {print $4}')"
   if ! [[ -d "$directory" ]]; then
-    error "Failed to determine git worktree after: $git_command"
+    error "Failed to determine git worktree after: $GIT_BIN $@"
   fi
 
   cd "$directory"
