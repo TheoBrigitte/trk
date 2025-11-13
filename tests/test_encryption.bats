@@ -208,10 +208,8 @@ load test_helper
   assert_success
 }
 
-@test "encryption: different passphrases produce different ciphertext" {
+@test "encryption: different keys produce different ciphertext" {
   # First repository
-  run trk init
-  assert_success
   local repo1="$TEST_DIR/repo1"
   mkdir -p "$repo1"
   cd "$repo1"
@@ -226,16 +224,15 @@ load test_helper
   hash1="$(git ls-files -s secret.txt | awk '{print $2}')"
   local content1
   content1="$(git cat-file -p "$hash1")"
+  cd ..
 
   # Second repository with different passphrase
-  cd "$TEST_DIR"
   local repo2="$TEST_DIR/repo2"
   mkdir -p "$repo2"
   cd "$repo2"
 
   run trk init
   assert_success
-  git config --local trk.passphrase "different-passphrase"
   create_file "secret.txt" "same content"
   run trk mark "secret.txt"
   git add secret.txt
