@@ -362,6 +362,14 @@ mark_command() {
     exit 1
   fi
 
+  if [[ "$("$GIT_BIN" config get --local --default "false" filter.git-crypt.required)" != "true" ]]; then
+    error "Encryption is not enabled in this repository. Run 'trk setup' to enable encryption."
+  fi
+
+  if [[ "$("$GIT_BIN" config get --local --default "false" filter.git-crypt.clean)" != '"git-crypt" clean' ]]; then
+    error "Git-crypt filter is not properly configured. Run 'trk setup' to enable encryption."
+  fi
+
   git_root="$("$GIT_BIN" rev-parse --show-toplevel)"
   # Create .gitattributes file if it doesn't exist
   [[ -f "$git_root/.gitattributes" ]] || touch "$git_root/.gitattributes"
