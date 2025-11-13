@@ -50,12 +50,12 @@ load test_helper
   git -C "$remote" init --bare --quiet
   git -C "$remote" worktree add --orphan -b develop work
   # Create initial README
-  echo "# Development" > "$remote/work/README.md"
+  create_file "$remote/work/README.md" "# Development"
   git -C "$remote/work" add "README.md"
   git -C "$remote/work" commit --quiet -m "Initial dev commit"
   git -C "$remote/work" checkout -b main
   # Overwrite README in main branch
-  echo "# Main" > "$remote/work/README.md"
+  create_file "$remote/work/README.md" "# Main"
   git -C "$remote/work" add "README.md"
   git -C "$remote/work" commit --quiet -m "Update README to Main"
 
@@ -127,7 +127,7 @@ load test_helper
   mkdir -p my-worktree
 
   # Create a conflicting local file
-  echo "# Local content" > my-worktree/README.md
+  create_file my-worktree/README.md "# Local content"
 
   run trk clone --worktree my-worktree remote/test-remote
   assert_failure

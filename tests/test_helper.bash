@@ -254,7 +254,7 @@ create_remote_repo() {
 create_remote_repo_with_file() {
   create_remote_repo "$1"
   git -C "$1" worktree add --orphan -b main work
-  echo "$3" > "$1/work/$2"
+  create_file "$1/work/$2" "$3"
   git -C "$1/work" add "./$2"
   git -C "$1/work" commit --quiet -m "Initial commit"
 }
