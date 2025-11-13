@@ -30,13 +30,6 @@ load test_helper
   assert_dir_exists "test-repo/.git"
 }
 
-@test "init_normal: preserves git options, only before path" {
-  run trk init test-repo --quiet
-  assert_failure
-
-  assert_output --partial "ERROR: Directory not found after git init"
-}
-
 @test "init_normal: --without-encryption skips encryption setup" {
   run trk init --without-encryption
   assert_success

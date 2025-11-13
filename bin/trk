@@ -122,22 +122,7 @@ clone_command() {
 
 # Clone a repository and configure it to be managed by trk
 clone_normal() {
-  # Unset GIT_DIR to make git clone to work with the current directory
-  unset GIT_DIR
-
-  # Capture the output of git clone to extract the directory name
-  # TODO: could be replaced by using a tempoary directory and moving it afterward
-  # since git clone should only create a single directory
-  exec 3>&1
-
-  # Clone the repository
-  output="$("$GIT_BIN" clone --no-checkout "$@" 2>&1 | tee /dev/fd/3)"
-
-  exec 3>&-
-  directory="$(echo "$output" | sed -nE "s/Cloning into '(.+)'\.\.\./\1/p")"
-
-  cd "$directory"
-  export GIT_DIR="$("$GIT_BIN" rev-parse --git-dir)"
+  git_capture_worktree clone --no-checkout "$@"
 
   configure_repo
 
@@ -208,23 +193,30 @@ init_command() {
 }
 
 init_normal() {
-  # Unset GIT_DIR to make git init to work with the current directory
-  unset GIT_DIR
-
-  "$GIT_BIN" init "$@"
-
-  # Change to the repository directory if not current directory
-  # Use last git init argument as directory
-  if [[ "$#" -gt 0 ]]; then
-    repository_dir="${!#}"
-    test -d "$repository_dir" || error "Directory not found after git init"
-    cd "$repository_dir"
-  fi
-
-  # Initialize the repository
-  export GIT_DIR="$("$GIT_BIN" rev-parse --git-dir)"
+  git_capture_worktree init "$@"
 
   configure_repo
+}
+
+git_capture_worktree() {
+  # Unset GIT_DIR to ensure git works with the current directory
+  unset GIT_DIR
+
+  # Capture the trace output of git to extract the worktree directory name
+  exec 3>&1
+
+  # Run git
+  # GIT_TRACE2=2 writes trace to stderr
+  output="$(GIT_TRACE2=2 "$GIT_BIN" "$@" 2>&1 | tee /dev/fd/3)"
+
+  exec 3>&-
+  directory="$(echo "$output" | awk '$3 == "worktree" {print $4}')"
+  if ! [[ -d "$directory" ]]; then
+    error "Failed to determine git worktree after: $git_command"
+  fi
+
+  cd "$directory"
+  export GIT_DIR="$("$GIT_BIN" rev-parse --git-dir)"
 }
 
 # Initialize a new repository as global repository with a specific worktree
