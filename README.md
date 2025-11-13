@@ -97,6 +97,91 @@ trk clone --worktree <path> <url>
 
 You can then work with the repository using `trk` as you would with a regular Git repository, encryption works the same way.
 
+## Permission Management
+
+Git only tracks the executable bit for files, not full file permissions or ownership. Trk provides comprehensive permission tracking using `getfacl`/`setfacl` to preserve complete file metadata across different systems.
+
+### How It Works
+
+Trk uses git hooks to automatically:
+1. **Before commit** (pre-commit): Capture current file permissions using `getfacl` in `.gitpermissions`
+2. **After checkout** (post-checkout): Restore permissions using `setfacl` from `.gitpermissions`
+
+The `.gitpermissions` file stores permissions in standard ACL format (base entries only: owner, group, other).
+
+### Enable Permission Tracking
+
+Permission tracking is **disabled by default**. Enable it during initialization:
+
+```bash
+# For new repositories
+trk init --with-permissions
+
+# For existing repositories
+trk setup --with-permissions
+```
+
+### Manual Commands
+
+```bash
+# Refresh permissions file with current state
+trk permissions refresh
+
+# Apply stored permissions to files
+trk permissions apply
+
+# Check differences between stored and actual permissions
+trk permissions status
+
+# Migrate old format to new format (if upgrading from older version)
+trk permissions migrate
+```
+
+### File Format
+
+The `.gitpermissions` file uses standard ACL format (output from `getfacl`):
+```
+# file: bin/trk
+user::rwx
+group::r-x
+other::r-x
+# file: README.md
+user::rw-
+group::r--
+other::r--
+```
+
+This format is:
+- **Performant**: `getfacl`/`setfacl` are optimized native tools
+- **Reliable**: Standard ACL format, widely supported
+- **Simple**: Base ACL entries only (owner, group, other)
+
+### Best Practices
+
+1. **Review `.gitpermissions`** before committing to ensure correct permissions
+2. **Run `trk permissions status`** periodically to detect drift
+3. **Use with encryption** for sensitive system files
+4. **Document special permissions** in your README if they're unusual
+
+### Example Workflow
+
+```bash
+# Enable permissions on existing repo
+trk setup --with-permissions
+
+# Add files with specific permissions
+chmod 755 bin/script.sh
+git add bin/script.sh
+git commit -m "Add script"  # Permissions automatically captured
+
+# Clone on another system
+trk clone --key-file key https://example.com/repo.git
+# Permissions automatically restored
+
+# Check if permissions match
+trk permissions status
+```
+
 ### Alternatives
 
 - https://github.com/AGWA/git-crypt

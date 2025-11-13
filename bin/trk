@@ -39,6 +39,8 @@ shopt -s extglob
 SHARED_GIT_DIR=~/.local/share/trk/repo.git
 PREFIX_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 HOOKS_DIR="$PREFIX_DIR/lib/trk/hooks"
+PERMISSIONS_LIST_FILE=".trk/permissions_list"
+PERMISSIONS_FILE=".trk/permissions"
 
 # Options
 ENCRYPTION_ENABLED=true
@@ -292,11 +294,77 @@ worktree_command() {
   echo "gitdir:   $repository"
 }
 
+# Usage: trk permissions mark <file>
+permissions_mark_command() {
+  if [[ $# -lt 1 ]]; then
+    echo "Missing file."
+    exit 1
+  fi
+
+  # resolve the path relative to the git root, and validate it exists
+  src="$(realpath --canonicalize-existing --relative-to "$GIT_ROOT" "$1")"
+  # ensure .trk directory is created
+  mkdir -p "$GIT_ROOT/.trk"
+  # Check if the file is already marked for permission tracking.
+  # Match permissions markers against src, if got a match, it means that src is a child of MATCH
+  if [[ -f "$GIT_ROOT/$PERMISSIONS_LIST_FILE" ]] && MATCH="$(echo "$src" | grep -qFf "$GIT_ROOT/$PERMISSIONS_LIST_FILE")"; then
+    echo_stderr "$src is already marked for permission tracking by: $MATCH"
+    return
+  fi
+
+  # Add the file to the permissions tracking list
+  echo "$src" >> "$GIT_ROOT/$PERMISSIONS_LIST_FILE"
+  "$GIT_BIN" add "$GIT_ROOT/$PERMISSIONS_LIST_FILE"
+  # TODO: refresh permissions
+}
+
+# Usage: trk permissions unmark <file>
+permissions_unmark_command() {
+  if [[ $# -lt 1 ]]; then
+    echo "Missing file."
+    exit 1
+  fi
+
+  # Not validating the path exists to allow unmarking deleted files
+  src="$(realpath --canonicalize-missing --relative-to "$GIT_ROOT" "$1")"
+  if [[ ! -f "$GIT_ROOT/$PERMISSIONS_LIST_FILE" ]]; then
+    echo_stderr "No permissions are being tracked."
+    return
+  fi
+
+  if ! grep -qFx "$src" "$GIT_ROOT/$PERMISSIONS_LIST_FILE"; then
+    if MATCH="$(echo "$src" | grep -qFf "$GIT_ROOT/$PERMISSIONS_LIST_FILE")"; then
+      echo_stderr "$src permissions are being tracked by: $MATCH"
+      return 1
+    fi
+
+    echo_stderr "$src is not marked for permission tracking"
+    return
+  fi
+
+  # Remove the file from the permissions tracking list
+  sed -i "\#^${src}\$#d" "$GIT_ROOT/$PERMISSIONS_LIST_FILE"
+  "$GIT_BIN" add "$GIT_ROOT/$PERMISSIONS_LIST_FILE"
+}
+
 # Usage: trk permissions apply
 #
 # Apply the permissions stored in .gitpermissions
 permissions_apply_command() {
-  "$GIT_BIN" hook run post-checkout
+  # Apply the permissions stored in .gitpermissions using setfacl
+  if [[ ! -f "$GIT_ROOT/$PERMISSIONS_FILE" ]]; then
+    echo_stderr "No $PERMISSIONS_FILE file found, skipping permission application."
+    return
+  fi
+
+  echo_stderr "Applying stored file permissions from $PERMISSIONS_FILE."
+
+  # Apply the permissions using setfacl
+  (
+    set -eu
+    cd "$GIT_ROOT"
+    setfacl ${SETFACL_FLAGS-} --restore="$GIT_ROOT/$PERMISSIONS_FILE"
+  )
 }
 
 # Usage: trk permissions refresh
@@ -306,29 +374,60 @@ permissions_refresh_command() {
   "$GIT_BIN" hook run pre-commit
 }
 
+hook_pre-commit_command() {
+  # Generate a list of current file permissions in the repository
+  # and save it to .gitpermissions file in the root of the repository.
+  # Uses getfacl to capture base ACL entries only (owner, group, other).
+
+  # Generate the .gitpermissions file using getfacl
+  # Exclude .gitpermissions itself from tracking
+  # Use -z and xargs -0 to handle filenames with spaces
+  if [[ ! -f "$GIT_ROOT/$PERMISSIONS_LIST_FILE" ]]; then
+    echo_stderr "No permissions files to track, skipping .gitpermissions update."
+    exit
+  fi
+
+  if ! git diff-index --cached --name-only HEAD -z -- | grep -zqFf "$GIT_ROOT/$PERMISSIONS_LIST_FILE"; then
+    echo_stderr "No tracked files changed, skipping .gitpermissions update." 1>&2
+    exit
+  fi
+
+  echo_stderr "Updating $PERMISSIONS_FILE with current file permissions."
+  (
+    set -eu
+    cd "$GIT_ROOT"
+    xargs -a "$GIT_ROOT/$PERMISSIONS_LIST_FILE" getfacl -R --access > "$GIT_ROOT/$PERMISSIONS_FILE"
+  )
+
+  git add "$GIT_ROOT/$PERMISSIONS_FILE"
+}
+
+hook_post-checkout_command() {
+  previous_head="$1"
+  new_head="$2"
+
+  # Restore file permissions from the .gitpermissions file after checkout
+  # Uses setfacl to restore base ACL entries (owner, group, other).
+
+  #[[ -f "$GIT_ROOT/.trk/permissions" ]] || exit 0
+
+  # Always apply if null-ref was given (e.g. clone)
+  if ! echo "$previous_head" | grep -qx '0\+'; then
+    if ! git diff "$previous_head" "$new_head" --name-only -z | grep -zqF -e "$PERMISSIONS_FILE" -f "$GIT_ROOT/$PERMISSIONS_LIST_FILE"; then
+      echo_stderr "Tracked files did not change, skipping permission application."
+      return
+    fi
+  fi
+
+  permissions_apply_command
+}
+
 # Usage: trk permissions status
 #
 # Check the status of file permissions against .gitpermissions
 permissions_status_command() {
-  git_root="$("$GIT_BIN" rev-parse --show-toplevel)"
-  [[ -f "$git_root/.gitpermissions" ]] || error ".gitpermissions file not found"
-
-  cat "$git_root/.gitpermissions" | while read -r line; do
-    # Split line into file path and permissions
-    file="$(echo "$line" | awk -F: '{print $1}')"
-    perm="$(echo "$line" | awk -F: '{print $2}')"
-    if [[ ! -e "$git_root/$file" ]]; then
-      echo "[ERR] $file: does not exist, skipping..."
-      continue
-    fi
-
-    actual_perm="$(stat -c "%a" "$git_root/$file" 2>&1)"
-    if [[ "$actual_perm" == "$perm" ]]; then
-      echo "[OK]  $file: $perm"
-    else
-      echo "[ERR] $file: mismatch (expected $perm, actual $actual_perm)"
-    fi
-  done
+  SETFACL_FLAGS="--test"
+  permissions_apply_command
 }
 
 # Usage: trk mark <file or pattern>

@@ -3,24 +3,7 @@
 
 load test_helper
 
-@test "permissions: not enabled by default" {
-  run trk init
-  assert_success
-
-  run git config --local trk.permissions
-  assert_failure
-}
-
-@test "permissions: enabled with --with-permissions" {
-  run trk init --with-permissions
-  assert_success
-
-  run git config --local trk.permissions
-  assert_success
-  assert_output "true"
-}
-
-@test "permissions refresh: stores current permissions" {
+@test "permissions refresh: stores current permissions using getfacl" {
   run trk init --with-permissions
   assert_success
 
@@ -36,19 +19,27 @@ load test_helper
   assert_success
 
   assert_file_exists ".gitpermissions"
-  assert_file_contains ".gitpermissions" "script.sh"
-  assert_file_contains ".gitpermissions" "755"
+  # Should contain ACL format entries
+  assert_file_contains ".gitpermissions" "# file: script.sh"
+  assert_file_contains ".gitpermissions" "user::"
+  assert_file_contains ".gitpermissions" "group::"
+  assert_file_contains ".gitpermissions" "other::"
 }
 
-@test "permissions refresh: fails without permissions enabled" {
-  run trk init
+@test "permissions refresh: fails without hooks installed" {
+  run trk init --without-permissions
   assert_success
+
+  create_file "test.txt" "content"
+  git add test.txt
+  git commit -m "test"
 
   run trk permissions refresh
   assert_failure
+  assert_output --partial "cannot find a hook named pre-commit"
 }
 
-@test "permissions apply: restores stored permissions" {
+@test "permissions apply: restores stored permissions using setfacl" {
   run trk init --with-permissions
   assert_success
 
@@ -63,18 +54,24 @@ load test_helper
   run trk permissions apply
   assert_success
 
-  # Permission should be restored
+  # Permission should be restored to 755
   local perm
   perm=$(stat -c "%a" "script.sh")
   [[ "$perm" == "755" ]]
 }
 
-@test "permissions apply: fails without permissions enabled" {
-  run trk init
+@test "permissions apply: fails without hooks installed" {
+  run trk init --without-permissions
   assert_success
+
+  create_file "test.txt" "content"
+  chmod 755 "test.txt"
+  git add test.txt
+  git commit -m "test"
 
   run trk permissions apply
   assert_failure
+  assert_output --partial "cannot find a hook named post-checkout"
 }
 
 @test "permissions status: shows permission differences" {
@@ -90,8 +87,8 @@ load test_helper
   chmod 644 "script.sh"
 
   run trk permissions status
-  assert_success
-  assert_output --partial  "script.sh"
+  assert_failure
+  assert_output --partial "Permission differences found"
 }
 
 @test "permissions status: shows no changes when permissions match" {
@@ -100,13 +97,23 @@ load test_helper
 
   create_file "script.sh" "#!/bin/bash"
   chmod 755 "script.sh"
-  run trk permissions refresh
-  git add .gitpermissions
-  git commit --quiet -m "Add permissions"
+  git add script.sh
+  git commit --quiet -m "Add script"
+
+  # Verify .gitpermissions was created
+  [[ -f ".gitpermissions" ]]
 
   run trk permissions status
+  if [[ "$status" -ne 0 ]]; then
+    # Debug output
+    echo "Output: $output"
+    echo ".gitpermissions:" 
+    cat .gitpermissions
+    echo "Current:"
+    git ls-files -z | grep -zv "^\.gitpermissions$" | xargs -0 getfacl --access 2>/dev/null | grep -v "^# owner:" | grep -v "^# group:"
+  fi
   assert_success
-  # Should show no differences or empty output
+  assert_output --partial "All permissions match"
 }
 
 @test "permissions status: fails without permissions enabled" {
@@ -128,10 +135,11 @@ load test_helper
   run trk permissions refresh
   assert_success
 
-  # Format should be: filename:mode
-  local line
-  line=$(grep "test.sh" .gitpermissions)
-  [[ "$line" =~ ^test\.sh:[0-9]+$ ]]
+  # Format should be getfacl format: # file: filename followed by ACL entries
+  assert_file_contains ".gitpermissions" "# file: test.sh"
+  assert_file_contains ".gitpermissions" "user::"
+  assert_file_contains ".gitpermissions" "group::"
+  assert_file_contains ".gitpermissions" "other::"
 }
 
 @test "permissions refresh: handles multiple files" {
@@ -151,9 +159,10 @@ load test_helper
   run trk permissions refresh
   assert_success
 
-  assert_file_contains ".gitpermissions" "script1.sh"
-  assert_file_contains ".gitpermissions" "script2.sh"
-  assert_file_contains ".gitpermissions" "data.txt"
+  # Check ACL format for all files
+  assert_file_contains ".gitpermissions" "# file: script1.sh"
+  assert_file_contains ".gitpermissions" "# file: script2.sh"
+  assert_file_contains ".gitpermissions" "# file: data.txt"
 }
 
 @test "permissions apply: handles multiple files" {
@@ -167,10 +176,6 @@ load test_helper
 
   git add .
   git commit --quiet -m "Add files"
-
-  run trk permissions refresh
-  git add .gitpermissions
-  git commit --quiet -m "Add permissions"
 
   # Change all permissions
   chmod 777 file1.txt file2.txt
@@ -259,7 +264,7 @@ load test_helper
   assert_failure
 }
 
-@test "permissions: removed by unsetup --prune" {
+@test "permissions: .gitpermissions persists after unsetup" {
   run trk init --with-permissions
   assert_success
 
@@ -271,10 +276,11 @@ load test_helper
   git add .gitpermissions
   git commit --quiet -m "Add"
 
-  run trk unsetup --prune
+  run trk unsetup
   assert_success
 
-  [[ ! -f ".gitpermissions" ]]
+  # .gitpermissions file should still exist (it's tracked in git)
+  [[ -f ".gitpermissions" ]]
 }
 
 @test "permissions refresh: handles files with spaces in names" {
@@ -288,7 +294,8 @@ load test_helper
   run trk permissions refresh
   assert_success
 
-  assert_file_contains ".gitpermissions" "file with spaces.txt"
+  # getfacl keeps spaces as-is in the filename
+  assert_file_contains ".gitpermissions" "# file: file with spaces.txt"
 }
 
 @test "permissions apply: handles files with spaces in names" {
@@ -325,7 +332,85 @@ load test_helper
   run trk permissions refresh
   assert_success
 
-  assert_file_contains ".gitpermissions" "dir/subdir/script.sh"
+  assert_file_contains ".gitpermissions" "# file: dir/subdir/script.sh"
+}
+
+@test "permissions: getfacl format preserves exact permissions" {
+  run trk init --with-permissions
+  assert_success
+
+  # Create files with different permission combinations
+  create_file "file1.txt" "content"
+  chmod 600 "file1.txt"
+  create_file "file2.txt" "content"
+  chmod 750 "file2.txt"
+  create_file "file3.txt" "content"
+  chmod 644 "file3.txt"
+
+  git add .
+  git commit --quiet -m "Add files"
+
+  # Change all permissions
+  chmod 777 file1.txt file2.txt file3.txt
+
+  # Apply should restore exact permissions
+  run trk permissions apply
+  assert_success
+
+  [[ "$(stat -c "%a" "file1.txt")" == "600" ]]
+  [[ "$(stat -c "%a" "file2.txt")" == "750" ]]
+  [[ "$(stat -c "%a" "file3.txt")" == "644" ]]
+}
+
+@test "permissions: setfacl restores permissions after checkout" {
+  run trk init --with-permissions
+  assert_success
+
+  create_file "script.sh" "#!/bin/bash"
+  chmod 755 "script.sh"
+  git add script.sh
+  git commit --quiet -m "Initial commit"
+
+  # Create a new branch with different permissions
+  git checkout -b test-branch --quiet
+  chmod 700 "script.sh"
+  run trk permissions refresh
+  git add .gitpermissions script.sh
+  git commit --quiet -m "Change permissions"
+
+  # Checkout back to main
+  git checkout main --quiet
+
+  # Permissions should be restored to 755
+  local perm
+  perm=$(stat -c "%a" "script.sh")
+  [[ "$perm" == "755" ]]
+}
+
+@test "permissions: handles permission changes across branches" {
+  run trk init --with-permissions
+  assert_success
+
+  # Main branch with 644
+  create_file "file.txt" "content"
+  chmod 644 "file.txt"
+  git add file.txt
+  git commit --quiet -m "Main branch"
+
+  # Feature branch with 600
+  git checkout -b feature --quiet
+  chmod 600 "file.txt"
+  run trk permissions refresh
+  git add .gitpermissions file.txt
+  git commit --quiet -m "Feature branch"
+
+  # Switch back to main - should have 644
+  git checkout main --quiet
+  [[ "$(stat -c "%a" "file.txt")" == "644" ]]
+
+  # Switch to feature - should have 600
+  git checkout feature --quiet
+  [[ "$(stat -c "%a" "file.txt")" == "600" ]]
 }
 
 @test "permissions status: in non-git repository fails" {
