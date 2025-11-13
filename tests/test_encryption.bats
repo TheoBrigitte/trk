@@ -3,52 +3,7 @@
 
 load test_helper
 
-@test "mark: marks a file for encryption" {
-  run trk init
-  assert_success
-
-  run trk mark "secret.txt"
-  assert_success
-
-  assert_file_contains ".gitattributes" "secret.txt"
-  assert_file_contains ".gitattributes" "filter=crypt"
-}
-
-@test "mark: marks a pattern for encryption" {
-  run trk init
-  assert_success
-
-  run trk mark "*.key"
-  assert_success
-
-  assert_file_contains ".gitattributes" "*.key"
-}
-
-@test "mark: marks multiple files" {
-  run trk init
-  assert_success
-
-  run trk mark "file1.txt"
-  assert_success
-
-  run trk mark "file2.txt"
-  assert_success
-
-  assert_file_contains ".gitattributes" "file1.txt"
-  assert_file_contains ".gitattributes" "file2.txt"
-}
-
-@test "mark: works with nested paths" {
-  run trk init
-  assert_success
-
-  run trk mark "secrets/passwords.txt"
-  assert_success
-
-  assert_file_contains ".gitattributes" "secrets/passwords.txt"
-}
-
-@test "mark: encrypts file when committed" {
+@test "commit: encrypts file when committed" {
   run trk init
   assert_success
 
@@ -62,6 +17,67 @@ load test_helper
   # File should be encrypted in git
   run is_encrypted_in_git "secret.txt"
   assert_success
+
+  # File is shown in clear in working directory
+  assert_file_contains "secret.txt" "my secret password"
+
+  # crypt status should show the file
+  run trk crypt status
+  assert_output --partial "encrypted: secret.txt"
+}
+
+@test "mark: marks a file for encryption" {
+  run trk init
+  assert_success
+
+  run trk mark "secret.txt"
+  assert_success
+
+  assert_file_contains ".gitattributes" "secret.txt filter=git-crypt diff=git-crypt"
+}
+
+@test "mark: marks a pattern for encryption" {
+  run trk init
+  assert_success
+
+  run trk mark "*.key"
+  assert_success
+
+  assert_file_contains ".gitattributes" "*.key filter=git-crypt diff=git-crypt"
+}
+
+@test "mark: marks multiple files" {
+  run trk init
+  assert_success
+
+  run trk mark "file1.txt"
+  assert_success
+
+  run trk mark "file2.txt"
+  assert_success
+
+  assert_file_contains ".gitattributes" "file1.txt filter=git-crypt diff=git-crypt"
+  assert_file_contains ".gitattributes" "file2.txt filter=git-crypt diff=git-crypt"
+}
+
+@test "mark: marks file with spaces" {
+  run trk init
+  assert_success
+
+  run trk mark "file with spaces.txt"
+  assert_success
+
+  assert_file_contains ".gitattributes" "file[[:space:]]with[[:space:]]spaces.txt filter=git-crypt diff=git-crypt"
+}
+
+@test "mark: works with nested paths" {
+  run trk init
+  assert_success
+
+  run trk mark "secrets/passwords.txt"
+  assert_success
+
+  assert_file_contains ".gitattributes" "secrets/passwords.txt filter=git-crypt diff=git-crypt"
 }
 
 @test "mark: decrypts file when checked out" {
@@ -89,6 +105,7 @@ load test_helper
 
   run trk mark "secret.txt"
   assert_failure
+  assert_output --partial "Encryption is not enabled in this repository"
 }
 
 @test "unmark: removes encryption mark from file" {
@@ -102,9 +119,7 @@ load test_helper
   assert_success
 
   # Check that the specific line is removed
-  if [[ -f .gitattributes ]]; then
-    ! grep -q "^secret.txt.*filter=crypt" .gitattributes
-  fi
+  ! grep -Fq "secret.txt" .gitattributes
 }
 
 @test "unmark: removes pattern from .gitattributes" {
@@ -117,9 +132,7 @@ load test_helper
   run trk unmark "*.key"
   assert_success
 
-  if [[ -f .gitattributes ]]; then
-    ! grep -q "^\*.key.*filter=crypt" .gitattributes
-  fi
+  ! grep -Fq "*.key" .gitattributes
 }
 
 @test "unmark: handles file not marked" {
@@ -131,121 +144,18 @@ load test_helper
   assert_success
 }
 
-@test "list encrypted: shows all marked files and patterns" {
+@test "crypt status: shows empty list when nothing marked" {
   run trk init
   assert_success
 
-  run trk mark "secret.txt"
-  run trk mark "*.key"
-  run trk mark "passwords.txt"
-
-  run trk list encrypted
-  assert_success
-  assert_output --partial  "secret.txt"
-  assert_output --partial  "*.key"
-  assert_output --partial  "passwords.txt"
-}
-
-@test "list encrypted: shows empty list when nothing marked" {
-  run trk init
-  assert_success
-
-  run trk list encrypted
-  assert_success
-}
-
-@test "list encrypted: fails without encryption setup" {
-  run trk init --without-encryption
-  assert_success
-
-  run trk list encrypted
-  assert_failure
-}
-
-@test "reencrypt: reencrypts all marked files" {
-  run trk init
-  assert_success
-
-  # Create and mark files
-  create_file "secret1.txt" "password1"
-  create_file "secret2.txt" "password2"
-  run trk mark "secret1.txt"
-  run trk mark "secret2.txt"
-
-  git add .
-  git commit --quiet -m "Add secrets"
-
-  # Change passphrase
-  local new_passphrase="new-passphrase-$(date +%s)"
-  git config --local trk.passphrase "$new_passphrase"
-
-  run trk reencrypt
-  assert_success
-
-  # Files should still be readable
-  assert_file_contains "secret1.txt" "password1"
-  assert_file_contains "secret2.txt" "password2"
-
-  # Files should be encrypted with new passphrase in git
-  run is_encrypted_in_git "secret1.txt"
-  assert_success
-  run is_encrypted_in_git "secret2.txt"
-  assert_success
-}
-
-@test "reencrypt: fails without encryption setup" {
-  run trk init --without-encryption
-  assert_success
-
-  run trk reencrypt
-  assert_failure
-}
-
-@test "reencrypt: handles repository with no encrypted files" {
-  run trk init
-  assert_success
-
-  run trk reencrypt
-  assert_success
-}
-
-@test "mark: with diff attribute sets diff and filter" {
-  run trk init
-  assert_success
-
-  run trk mark "secret.txt"
-  assert_success
-
-  assert_file_contains ".gitattributes" "diff=crypt"
-  assert_file_contains ".gitattributes" "filter=crypt"
-}
-
-@test "mark: with merge attribute sets merge" {
-  run trk init
-  assert_success
-
-  run trk mark "secret.txt"
-  assert_success
-
-  assert_file_contains ".gitattributes" "merge=crypt"
-}
-
-@test "encryption: preserves file content through commit cycle" {
-  run trk init
-  assert_success
-
-  local original_content="This is my secret password: 12345"
-  create_file "secret.txt" "$original_content"
-  run trk mark "secret.txt"
-  assert_success
-
+  # Creating an empty file to have the repository initialized with HEAD
+  create_file "secret.txt" "my secret password"
   git add secret.txt
   git commit --quiet -m "Add secret"
 
-  # Read back the file
-  local content
-  content="$(cat secret.txt)"
-  [[ "$content" == "$original_content" ]]
+  run trk crypt status
+  assert_success
+  refute_output
 }
 
 @test "encryption: handles binary files" {
@@ -286,7 +196,7 @@ load test_helper
   assert_success
 
   # Create a 1MB file
-  dd if=/dev/zero of=large.txt bs=1M count=1 2>/dev/null
+  dd if=/dev/urandom of=large.txt bs=1M count=1 2>/dev/null
 
   run trk mark "large.txt"
   assert_success
@@ -347,8 +257,4 @@ load test_helper
 @test "unmark: fails in non-git repository" {
   run trk unmark "file.txt"
   assert_failure
-}
-
-@test "reencrypt: requires confirmation in interactive mode" {
-  skip "Interactive test - requires manual testing"
 }

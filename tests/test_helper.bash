@@ -202,7 +202,7 @@ refute_dir_exists() {
 assert_file_contains() {
   local file="$1"
   local expected="$2"
-  if ! grep -q "$expected" "$file"; then
+  if ! grep -Fq "$expected" "$file"; then
     echo "File does not contain expected string"
     echo "File: $file"
     echo "Expected: $expected"
@@ -275,11 +275,17 @@ is_encrypted_in_git() {
   local content
   content="$(git cat-file -p "$sha")"
 
-  # Check if content starts with "Salted__" (OpenSSL encrypted format)
-  if [[ "$content" =~ ^Salted__ ]] || echo "$content" | head -c 8 | grep -q "Salted__"; then
-    return 0
+  # Check if content starts with "GITCRYPT" (git-crypt encrypted format)
+  if ! [[ "$content" =~ ^GITCRYPT ]]; then
+    return 1
   fi
-  return 1
+
+  # Ensure that file content is not stored in clear
+  if [[ "$content" =~ "$(cat "$file")" ]]; then
+    return 1
+  fi
+
+  return 0
 }
 
 # Wait for file to be modified (useful for async operations)
