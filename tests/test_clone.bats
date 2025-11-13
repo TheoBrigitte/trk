@@ -19,7 +19,7 @@ load test_helper
   refute_is_global_repository
 }
 
-@test "clone_normal: clones a repository with non-humanish URL" {
+@test "clone_normal: clones a repository with non-standard URL" {
   create_remote_repo_with_file remote/test-remote/.git README.md "# Test"
 
   run trk clone remote/test-remote/.git
@@ -71,6 +71,44 @@ load test_helper
   [[ "$(cat README.md)" == "# Development" ]]
 }
 
+@test "clone_normal: --without-encryption skips encryption setup" {
+  create_remote_repo_with_file remote/test-remote README.md "# Test"
+
+  run trk clone remote/test-remote --without-encryption
+  assert_success
+
+  assert_dir_exists test-remote/.git
+  assert_file_exists test-remote/README.md
+
+  cd test-remote
+  refute_encryption_configured
+}
+
+@test "clone_normal: --without-permissions skips permissions setup" {
+  create_remote_repo_with_file remote/test-remote README.md "# Test"
+
+  run trk clone remote/test-remote --without-permissions
+  assert_success
+
+  assert_dir_exists test-remote/.git
+  assert_file_exists test-remote/README.md
+
+  cd test-remote
+  refute_permission_configured
+}
+
+@test "clone_normal: fails with invalid remote" {
+  run trk clone "file:///nonexistent/repo.git"
+  assert_failure
+  assert_output --partial "fatal: '/nonexistent/repo.git' does not appear to be a git repository"
+}
+
+@test "clone_normal: requires repository URL" {
+  run trk clone
+  assert_failure
+  assert_output --partial "fatal: You must specify a repository to clone"
+}
+
 @test "clone_global: --worktree creates global repository" {
   create_remote_repo_with_file remote/test-remote/.git README.md "# Test"
 
@@ -102,42 +140,4 @@ load test_helper
   assert_output --partial "+++ b/README.md"
   assert_output --partial "-# Test"
   assert_output --partial "+# Local content"
-}
-
-@test "clone: --without-encryption skips encryption setup" {
-  create_remote_repo_with_file remote/test-remote README.md "# Test"
-
-  run trk clone remote/test-remote --without-encryption
-  assert_success
-
-  assert_dir_exists test-remote/.git
-  assert_file_exists test-remote/README.md
-
-  cd test-remote
-  refute_encryption_configured
-}
-
-@test "clone: --without-permissions skips permissions setup" {
-  create_remote_repo_with_file remote/test-remote README.md "# Test"
-
-  run trk clone remote/test-remote --without-permissions
-  assert_success
-
-  assert_dir_exists test-remote/.git
-  assert_file_exists test-remote/README.md
-
-  cd test-remote
-  refute_permission_configured
-}
-
-@test "clone: fails with invalid remote" {
-  run trk clone "file:///nonexistent/repo.git"
-  assert_failure
-  assert_output --partial "fatal: '/nonexistent/repo.git' does not appear to be a git repository"
-}
-
-@test "clone: requires repository URL" {
-  run trk clone
-  assert_failure
-  assert_output --partial "fatal: You must specify a repository to clone"
 }
