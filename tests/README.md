@@ -158,7 +158,7 @@ load test_helper
 
   # Assertions
   assert_success
-  assert_output_contains "expected"
+  assert_output --partial  "expected"
 }
 ```
 

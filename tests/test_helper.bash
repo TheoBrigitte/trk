@@ -146,6 +146,18 @@ refute_encryption_configured() {
   ! assert_dir_exists "$git_dir/git-crypt"
 }
 
+######################
+#    git helpers     #
+######################
+
+assert_git_checkout_clean() {
+  run trk diff HEAD --quiet
+  assert_success
+
+  run trk ls-files --others --exclude-standard
+  assert_success
+  assert_output ""
+}
 
 ######################
 #   Assert helpers   #
@@ -234,11 +246,17 @@ create_file() {
 
 # Create a test git remote repository
 create_remote_repo() {
-  local name="$1"
-  local remote_dir="$TEST_DIR/remotes/$name"
-  mkdir -p "$remote_dir"
-  git -C "$remote_dir" init --bare --quiet
-  echo "$remote_dir"
+  mkdir -p "$1"
+  git -C "$1" init --bare --quiet
+}
+
+# Create a test git remote repository
+create_remote_repo_with_file() {
+  create_remote_repo "$1"
+  git -C "$1" worktree add --orphan -b main work
+  echo "$3" > "$1/work/$2"
+  git -C "$1/work" add "./$2"
+  git -C "$1/work" commit --quiet -m "Initial commit"
 }
 
 # Initialize a test repository with some content
