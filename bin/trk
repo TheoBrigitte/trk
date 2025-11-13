@@ -44,7 +44,6 @@ HOOKS_DIR="$PREFIX_DIR/lib/trk/hooks"
 ENCRYPTION_ENABLED=true
 PERMISSIONS_ENABLED=true
 KEY_FILE=""
-PRUNE=false
 WORKTREE=""
 set +a
 
@@ -271,18 +270,10 @@ setup_command() {
 #
 # Unsetup the repository from trk
 # Encryption cannot be disabled
-#
-# Options:
-#   --prune    Remove all trk related configuration and files from the repository
 unsetup_command() {
-  if "$PRUNE"; then
-    "$GIT_BIN" config remove-section --local "trk" 2>/dev/null || true
-    git_root="$("$GIT_BIN" rev-parse --show-toplevel)"
-    rm -f "$git_root/.gitattributes" "$git_root/.gitpermissions"
-  else
-    "$GIT_BIN" config set --local trk.managed false
-  fi
+  "$GIT_BIN" config set --local trk.managed false
 
+  # TODO: link this to git-crypt lock
   #encryption_disable
   permissions_disable
 
@@ -418,12 +409,14 @@ version_command() {
 
 # Enable permission tracking
 permissions_enable() {
-  cp -i "$HOOKS_DIR/"* "$GIT_DIR/hooks/"
+  git_hook_dir="$(git rev-parse --git-path hooks)"
+  cp -i "$HOOKS_DIR/"* "$git_hook_dir/"
 }
 
 # Disable permission tracking
 permissions_disable() {
-  rm -f "$GIT_DIR/hooks/pre-commit" "$GIT_DIR/hooks/post-checkout"
+  git_hook_dir="$(git rev-parse --git-path hooks)"
+  rm -f "$git_hook_dir/pre-commit" "$git_hook_dir/post-checkout"
 }
 
 # This attribute is used to mark files that should be encrypted
@@ -445,8 +438,8 @@ generate_attribute() {
 #     - hooks
 configure_repo() {
   # Always set trk.managed to true
-  "$GIT_BIN" config set --local trk.managed true 2>/dev/null
-  "$GIT_BIN" config unset --local core.bare 2>/dev/null
+  "$GIT_BIN" config set --local trk.managed true
+  "$GIT_BIN" config unset --local core.bare || true
 
   configure_repo_permissions
 }
@@ -477,7 +470,7 @@ configure_repo_encryption() {
   fi
 
   # Check if encryption is currently set in the repository
-  encryption_set="$("$GIT_BIN" config get --local --default "false" filter.crypt.required)"
+  encryption_set="$("$GIT_BIN" config get --local --default "false" filter.git-crypt.required)"
 
   if [[ -n "$KEY_FILE" ]]; then
     # If a key file was provided, decrypt the repository
@@ -542,12 +535,10 @@ main() {
       -h|--help)
         show_help=true;;
       --key-file)
-        KEY_FILE="$2"
+        KEY_FILE="${2-}"
         [[ -z "$KEY_FILE" ]] && error "--key-file requires an argument"
         [[ ! -f "$KEY_FILE" ]] && error "$KEY_FILE file not found"
         shift;;
-      --prune)
-        PRUNE=true;;
       --with?(out)-@(encryption|permissions))
         option="${1##*-}"
         option="${option^^}_ENABLED"
