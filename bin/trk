@@ -434,7 +434,7 @@ generate_attribute() {
   # gitattributes uses [[:space:]] to represent spaces
   # https://github.com/git/git/blob/8d8387116ae8c3e73f6184471f0c46edbd2c7601/Documentation/gitattributes.txt#L563-L564
   escaped_path="${1//\ /[[:space:]]}"
-  echo "$escaped_path filter=crypt diff=crypt merge=crypt"
+  echo "$escaped_path filter=git-crypt diff=git-crypt"
 }
 
 ##########################################
