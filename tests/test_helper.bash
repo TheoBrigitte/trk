@@ -92,9 +92,6 @@ assert_base_configuration() {
 }
 
 assert_permission_configured() {
-  # trk configuration is set
-  assert_git_config "trk.permissions" "true"
-
   # hooks files exists
   git_dir="$(trk rev-parse --absolute-git-dir)"
   assert_file_exists "$git_dir/hooks/pre-commit"

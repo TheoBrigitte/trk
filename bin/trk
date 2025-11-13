@@ -427,13 +427,11 @@ version_command() {
 # Enable permission tracking
 permissions_enable() {
   cp -i "$HOOKS_DIR/"* "$GIT_DIR/hooks/"
-  "$GIT_BIN" config set --local trk.permissions true
 }
 
 # Disable permission tracking
 permissions_disable() {
   rm -f "$GIT_DIR/hooks/pre-commit" "$GIT_DIR/hooks/post-checkout"
-  "$GIT_BIN" config set --local trk.permissions false
 }
 
 # This attribute is used to mark files that should be encrypted
