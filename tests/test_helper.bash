@@ -268,9 +268,9 @@ init_test_repo() {
 is_encrypted_in_git() {
   local file="$1"
   local sha
-  sha="$(git ls-files -s "$file" | awk '{print $2}')"
+  sha="$(trk ls-files -s "$file" | awk '{print $2}')"
   local content
-  content="$(git cat-file -p "$sha")"
+  content="$(trk cat-file -p "$sha")"
 
   # Check if content starts with "GITCRYPT" (git-crypt encrypted format)
   if ! [[ "$content" =~ ^GITCRYPT ]]; then
