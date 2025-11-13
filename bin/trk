@@ -375,7 +375,7 @@ mark_command() {
   [[ -f "$git_root/.gitattributes" ]] || touch "$git_root/.gitattributes"
 
   # Add the git attribute for the file
-  src="$(realpath --relative-to "$git_root" "$1")"
+  src="$(realpath --canonicalize-missing --relative-to "$git_root" "$1")"
   attribute=$(generate_attribute "$src")
   escaped_attribute="${attribute//\*/\\*}"
   match="$(sed -n "\#^${escaped_attribute}\$#p" "$git_root/.gitattributes")"
