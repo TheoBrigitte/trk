@@ -6,7 +6,7 @@ load test_helper
 
 # Tests for init_normal
 
-@test "init_normal: creates a new repository" {
+@test "init_normal: creates a regular repository" {
   run trk init
   assert_success
   assert_dir_exists ".git"
@@ -17,20 +17,20 @@ load test_helper
   refute_is_global_repository
 }
 
-@test "init_normal: creates repository in specified directory" {
+@test "init_normal: creates a regular repository in specified directory" {
   run trk init test-repo
   assert_success
   assert_dir_exists "test-repo/.git"
 }
 
-@test "init_normal: preserve git options" {
+@test "init_normal: preserves git options" {
   run trk init --quiet test-repo
   assert_success
   refute_output "Initialized empty Git repository in"
   assert_dir_exists "test-repo/.git"
 }
 
-@test "init_normal: preserve git options, only before path" {
+@test "init_normal: preserves git options, only before path" {
   run trk init test-repo --quiet
   assert_failure
 
@@ -49,6 +49,17 @@ load test_helper
   assert_success
 
   refute_permission_configured
+}
+
+@test "init_normal: --key-file imports encryption key" {
+  git-crypt keygen my-key
+
+  run trk init --key-file my-key
+  assert_success
+  assert_base_configuration
+  assert_encryption_configured
+
+  diff my-key "$(trk rev-parse --absolute-git-dir)/git-crypt/keys/default"
 }
 
 # Tests for init_global
@@ -72,7 +83,7 @@ load test_helper
   assert_failure
 }
 
-@test "init_global: passes through git init options" {
+@test "init_global: preserves git options" {
   local worktree="$TEST_DIR/my-worktree"
   mkdir -p "$worktree"
 
@@ -82,7 +93,27 @@ load test_helper
   refute_output "Initialized empty Git repository in"
 }
 
-@test "init_global: with --key-file works" {
+@test "init_global: --without-encryption skips encryption setup" {
+  local worktree="$TEST_DIR/my-worktree"
+  mkdir -p "$worktree"
+
+  run trk init --worktree "$worktree" --without-encryption
+  assert_success
+
+  refute_encryption_configured
+}
+
+@test "init_global: --without-permissions skips permissions setup" {
+  local worktree="$TEST_DIR/my-worktree"
+  mkdir -p "$worktree"
+
+  run trk init --worktree "$worktree" --without-permissions
+  assert_success
+
+  refute_permission_configured
+}
+
+@test "init_global: --key-file imports encryption key" {
   local worktree="$TEST_DIR/my-worktree"
   mkdir -p "$worktree"
   git-crypt keygen my-key
