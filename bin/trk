@@ -526,7 +526,7 @@ main() {
   check_dependency "$GIT_BIN"
   check_dependency "$GIT_CRYPT_BIN"
 
-  # Detect if we are in a git repository
+  # When not inside a git repository, operatore on the shared repository.
   if ! "$GIT_BIN" rev-parse --absolute-git-dir &>/dev/null; then
     export GIT_DIR="$SHARED_GIT_DIR"
   fi
@@ -607,14 +607,8 @@ main() {
     error "Unknown command: ${cmd_parts[*]}"
   fi
 
-  if "$show_help" || [[ "$cmd" == "help_command" ]]; then
-    # Display help message and exit.
-    help_command "${cmd_parts[*]}"
-  fi
-
   # Validate that the repository is initialized
-  # Only validate now to allow for help to be shown
-  if [[ ! -d "$SHARED_GIT_DIR" ]] && [[ "$cmd" != init_command && "$cmd" != clone_command ]]; then
+  if [[ "${GIT_DIR-}" == "$SHARED_GIT_DIR" && ! -d "$SHARED_GIT_DIR" && "$cmd" != init_command && "$cmd" != clone_command ]]; then
     error "$TRK_BIN was not initialized. Run init or clone to initialize."
   fi
 
