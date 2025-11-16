@@ -103,28 +103,60 @@ Git only tracks the executable bit for files, not full file permissions or owner
 
 ### How It Works
 
-Trk uses git hooks to automatically:
-1. **Before commit** (pre-commit): Capture current file permissions using `getfacl` in `.gitpermissions`
-2. **After checkout** (post-checkout): Restore permissions using `setfacl` from `.gitpermissions`
+Trk uses a **selective tracking** approach where you explicitly mark which files or directories should have their permissions tracked:
 
-The `.gitpermissions` file stores permissions in standard ACL format (base entries only: owner, group, other).
+1. **Mark files** for permission tracking using `trk permissions mark <path>`
+2. **Before commit** (pre-commit hook): Automatically captures permissions for marked paths using `getfacl` and stores them in `.trk/permissions`
+3. **After checkout** (post-checkout hook): Automatically restores permissions using `setfacl` from `.trk/permissions`
+
+The system is optimized to only update permissions when tracked files actually change, minimizing overhead.
 
 ### Enable Permission Tracking
 
-Permission tracking is **disabled by default**. Enable it during initialization:
+Permission tracking is **enabled by default**. You can explicitly control it during initialization:
 
 ```bash
 # For new repositories
-trk init --with-permissions
+trk init --with-permissions     # Enable (default)
+trk init --without-permissions  # Disable
 
 # For existing repositories
 trk setup --with-permissions
 ```
 
+### Marking Files for Permission Tracking
+
+Unlike automatic tracking of all files, you must explicitly mark which paths should be tracked:
+
+```bash
+# Mark a specific file
+trk permissions mark bin/script.sh
+
+# Mark a directory (will track all files recursively)
+trk permissions mark config/
+
+# View which paths are being tracked
+trk permissions list
+
+# Remove a path from tracking
+trk permissions unmark bin/script.sh
+```
+
+Marked paths are stored in `.trk/permissions_list` and should be committed to the repository.
+
 ### Manual Commands
 
 ```bash
-# Refresh permissions file with current state
+# Mark a file/directory for permission tracking
+trk permissions mark <path>
+
+# Remove a file/directory from permission tracking
+trk permissions unmark <path>
+
+# List all paths tracked for permissions
+trk permissions list
+
+# Refresh permissions file with current state (runs pre-commit hook)
 trk permissions refresh
 
 # Apply stored permissions to files
@@ -132,36 +164,44 @@ trk permissions apply
 
 # Check differences between stored and actual permissions
 trk permissions status
-
-# Migrate old format to new format (if upgrading from older version)
-trk permissions migrate
 ```
 
-### File Format
+### File Structure
 
-The `.gitpermissions` file uses standard ACL format (output from `getfacl`):
-```
-# file: bin/trk
-user::rwx
-group::r-x
-other::r-x
-# file: README.md
-user::rw-
-group::r--
-other::r--
-```
+Trk uses two files for permission management:
 
-This format is:
-- **Performant**: `getfacl`/`setfacl` are optimized native tools
+1. **`.trk/permissions_list`**: Lists paths tracked for permissions (one per line)
+   ```
+   bin/trk
+   config/
+   ```
+
+2. **`.trk/permissions`**: Stores actual permissions in standard ACL format (output from `getfacl`)
+   ```
+   # file: bin/trk
+   user::rwx
+   group::r-x
+   other::r-x
+
+   # file: config/app.conf
+   user::rw-
+   group::r--
+   other::---
+   ```
+
+This approach is:
+- **Performant**: Only tracks specified files, uses optimized native tools
 - **Reliable**: Standard ACL format, widely supported
+- **Flexible**: Choose exactly what needs permission tracking
 - **Simple**: Base ACL entries only (owner, group, other)
 
 ### Best Practices
 
-1. **Review `.gitpermissions`** before committing to ensure correct permissions
-2. **Run `trk permissions status`** periodically to detect drift
-3. **Use with encryption** for sensitive system files
-4. **Document special permissions** in your README if they're unusual
+1. **Mark files selectively**: Only track files that need specific permissions (executables, config files)
+2. **Review `.trk/permissions`** before committing to ensure correct permissions are captured
+3. **Commit `.trk/permissions_list`** so others know which files are tracked
+4. **Run `trk permissions status`** periodically to detect drift
+5. **Use with encryption** for sensitive system files with restricted permissions
 
 ### Example Workflow
 
@@ -169,14 +209,25 @@ This format is:
 # Enable permissions on existing repo
 trk setup --with-permissions
 
+# Mark executable files for permission tracking
+trk permissions mark bin/trk
+trk permissions mark bin/deploy.sh
+
+# Verify they're marked
+trk permissions list
+
+# Commit the tracking list
+trk add .trk/permissions_list
+trk commit -m "Track permissions for bin/ scripts"
+
 # Add files with specific permissions
-chmod 755 bin/script.sh
-git add bin/script.sh
-git commit -m "Add script"  # Permissions automatically captured
+chmod 755 bin/deploy.sh
+trk add bin/deploy.sh
+trk commit -m "Add deployment script"  # Permissions automatically captured
 
 # Clone on another system
 trk clone --key-file key https://example.com/repo.git
-# Permissions automatically restored
+# Permissions automatically restored for marked files
 
 # Check if permissions match
 trk permissions status
