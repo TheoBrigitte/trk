@@ -26,6 +26,7 @@
 #   > Permissions <
 #   permissions mark     Add a path to be tracked for permissions
 #   permissions unmark   Remove a path from being tracked for permissions
+#   permissions list     List all paths tracked for permissions
 #   permissions apply    Apply stored permissions to files
 #   permissions refresh  Refresh the stored permissions with current file permissions
 #   permissions status   Check the status of file permissions
@@ -449,6 +450,18 @@ hook_post-checkout_command() {
   fi
 
   permissions_apply_command
+}
+
+# Usage: trk permissions list
+#
+# List files being tracked for permissions
+permissions_list_command() {
+  if [[ ! -f "$GIT_ROOT/$PERMISSIONS_LIST_FILE" ]]; then
+    echo_stderr "No permissions are being tracked."
+    return
+  fi
+
+  cat "$GIT_ROOT/$PERMISSIONS_LIST_FILE"
 }
 
 # Usage: trk permissions status
