@@ -291,6 +291,30 @@ info_command() {
   echo "gitdir:   $GIT_DIR"
 }
 
+permissions_match() {
+  while IFS= read -r line; do
+    if [[ "$1" =~ ^"$line" ]]; then
+      echo "$line"
+      return 0
+    fi
+  done < "$GIT_ROOT/$PERMISSIONS_LIST_FILE"
+
+  return 1
+}
+
+permissions_match_stdin() {
+  while IFS= read -d '' -r matcher; do
+    while IFS= read -r line; do
+      if [[ "$matcher" =~ ^"$line" ]]; then
+        echo "$line"
+        return 0
+      fi
+    done < "$GIT_ROOT/$PERMISSIONS_LIST_FILE"
+  done
+
+  return 1
+}
+
 # Usage: trk permissions mark <file>
 permissions_mark_command() {
   if [[ $# -lt 1 ]]; then
@@ -304,7 +328,7 @@ permissions_mark_command() {
   mkdir -p "$GIT_ROOT/.trk"
   # Check if the file is already marked for permission tracking.
   # Match permissions markers against src, if got a match, it means that src is a child of MATCH
-  if [[ -f "$GIT_ROOT/$PERMISSIONS_LIST_FILE" ]] && MATCH="$(echo "$src" | grep -Ff "$GIT_ROOT/$PERMISSIONS_LIST_FILE")"; then
+  if [[ -f "$GIT_ROOT/$PERMISSIONS_LIST_FILE" ]] && MATCH="$(permissions_match "$src")"; then
     echo_stderr "$src is already marked for permission tracking by: $MATCH"
     return
   fi
@@ -330,7 +354,7 @@ permissions_unmark_command() {
   fi
 
   if ! grep -qFx "$src" "$GIT_ROOT/$PERMISSIONS_LIST_FILE"; then
-    if MATCH="$(echo "$src" | grep -Ff "$GIT_ROOT/$PERMISSIONS_LIST_FILE")"; then
+    if MATCH="$(permissions_match "$src")"; then
       echo_stderr "$src permissions are being tracked by: $MATCH"
       return 1
     fi
@@ -381,12 +405,12 @@ hook_pre-commit_command() {
   # Use -z and xargs -0 to handle filenames with spaces
   if [[ ! -f "$GIT_ROOT/$PERMISSIONS_LIST_FILE" ]]; then
     echo_stderr "No permissions files to track, skipping .gitpermissions update."
-    exit
+    return
   fi
 
-  if ! git diff-index --cached --name-only HEAD -z -- | grep -zqFf "$GIT_ROOT/$PERMISSIONS_LIST_FILE"; then
+  if ! git diff-index --cached --name-only HEAD -z -- | permissions_match_stdin 1>/dev/null && git diff-index --cached --quiet --exit-code HEAD -- "$GIT_ROOT/$PERMISSIONS_LIST_FILE"; then
     echo_stderr "No tracked files changed, skipping .gitpermissions update." 1>&2
-    exit
+    return
   fi
 
   echo_stderr "Updating $PERMISSIONS_FILE with current file permissions."
@@ -406,11 +430,14 @@ hook_post-checkout_command() {
   # Restore file permissions from the .gitpermissions file after checkout
   # Uses setfacl to restore base ACL entries (owner, group, other).
 
-  #[[ -f "$GIT_ROOT/.trk/permissions" ]] || exit 0
+  if [[ ! -f "$GIT_ROOT/$PERMISSIONS_FILE" ]]; then
+    echo_stderr "No $PERMISSIONS_FILE file found, skipping permission application."
+    return
+  fi
 
   # Always apply if null-ref was given (e.g. clone)
   if ! echo "$previous_head" | grep -qx '0\+'; then
-    if ! git diff "$previous_head" "$new_head" --name-only -z | grep -zqF -e "$PERMISSIONS_FILE" -f "$GIT_ROOT/$PERMISSIONS_LIST_FILE"; then
+    if ! git diff "$previous_head" "$new_head" --name-only -z -- | permissions_match_stdin 1>/dev/null && git diff --quiet --exit-code "$previous_head" "$new_head" -- "$GIT_ROOT/$PERMISSIONS_FILE"; then
       echo_stderr "Tracked files did not change, skipping permission application."
       return
     fi
