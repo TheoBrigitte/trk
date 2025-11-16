@@ -304,7 +304,7 @@ permissions_mark_command() {
   mkdir -p "$GIT_ROOT/.trk"
   # Check if the file is already marked for permission tracking.
   # Match permissions markers against src, if got a match, it means that src is a child of MATCH
-  if [[ -f "$GIT_ROOT/$PERMISSIONS_LIST_FILE" ]] && MATCH="$(echo "$src" | grep -qFf "$GIT_ROOT/$PERMISSIONS_LIST_FILE")"; then
+  if [[ -f "$GIT_ROOT/$PERMISSIONS_LIST_FILE" ]] && MATCH="$(echo "$src" | grep -Ff "$GIT_ROOT/$PERMISSIONS_LIST_FILE")"; then
     echo_stderr "$src is already marked for permission tracking by: $MATCH"
     return
   fi
@@ -330,7 +330,7 @@ permissions_unmark_command() {
   fi
 
   if ! grep -qFx "$src" "$GIT_ROOT/$PERMISSIONS_LIST_FILE"; then
-    if MATCH="$(echo "$src" | grep -qFf "$GIT_ROOT/$PERMISSIONS_LIST_FILE")"; then
+    if MATCH="$(echo "$src" | grep -Ff "$GIT_ROOT/$PERMISSIONS_LIST_FILE")"; then
       echo_stderr "$src permissions are being tracked by: $MATCH"
       return 1
     fi
