@@ -24,6 +24,8 @@
 #   crypt                Git crypt subcommands
 #
 #   > Permissions <
+#   permissions mark     Add a path to be tracked for permissions
+#   permissions unmark   Remove a path from being tracked for permissions
 #   permissions apply    Apply stored permissions to files
 #   permissions refresh  Refresh the stored permissions with current file permissions
 #   permissions status   Check the status of file permissions
@@ -98,7 +100,6 @@ join_by() {
 #
 # Clone a repository
 # Worktree is left unchanged if there are local changes
-#
 #
 # Options:
 #   --key-file <path>     Path to the encryption key
@@ -175,14 +176,14 @@ clone_global() {
 
 # Usage: trk init [ <options> ] [ <git options> ]
 #
-# Initialize a new repository as global repository with a specific worktree
+# Initialize a new repository
 #
 # Options:
 #   --key-file <path>        Path to the encryption key
 #   --worktree <path>        Set the worktree path
 #                            When using this option, the repository is globally available and created in $SHARED_GIT_DIR
-#   --with[out]-encryption   Setup encryption for the repository (default on)
-#   --with[out]-permissions  Setup permission tracking for the repository (default on)
+#   --with[out]-encryption   Setup encryption for the repository (default $ENCRYPTION_ENABLED)
+#   --with[out]-permissions  Setup permission tracking for the repository (default $PERMISSIONS_ENABLED)
 init_command() {
   if [[ -n "$WORKTREE" ]]; then
     init_global "$@"
@@ -262,8 +263,8 @@ crypt_status_command() {
 # Setup the repository to use trk
 #
 # Options:
-#   --with[out]-encryption   Setup encryption for the repository (default on)
-#   --with[out]-permissions  Setup permission tracking for the repository (default off)
+#   --with[out]-encryption   Setup encryption for the repository (default $ENCRYPTION_ENABLED)
+#   --with[out]-permissions  Setup permission tracking for the repository (default $PERMISSIONS_ENABLED)
 setup_command() {
   configure_repo
   configure_repo_encryption
@@ -271,7 +272,7 @@ setup_command() {
 
 # Usage: trk unsetup [ <options ]
 #
-# Unsetup the repository from trk
+# Unsetup trk from the repository
 # Encryption cannot be disabled
 unsetup_command() {
   "$GIT_BIN" config set --local trk.managed false
@@ -316,6 +317,8 @@ permissions_match_stdin() {
 }
 
 # Usage: trk permissions mark <file>
+#
+# Add a path to be tracked for permissions
 permissions_mark_command() {
   if [[ $# -lt 1 ]]; then
     echo "Missing file."
@@ -340,6 +343,8 @@ permissions_mark_command() {
 }
 
 # Usage: trk permissions unmark <file>
+#
+# Remove a path from being tracked for permissions
 permissions_unmark_command() {
   if [[ $# -lt 1 ]]; then
     echo "Missing file."
@@ -370,7 +375,7 @@ permissions_unmark_command() {
 
 # Usage: trk permissions apply
 #
-# Apply the permissions stored in .gitpermissions
+# Apply permissions to files in the worktree
 permissions_apply_command() {
   # Apply the permissions stored in .gitpermissions using setfacl
   if [[ ! -f "$GIT_ROOT/$PERMISSIONS_FILE" ]]; then
@@ -390,7 +395,7 @@ permissions_apply_command() {
 
 # Usage: trk permissions refresh
 #
-# Refresh the .gitpermissions file with current file permissions
+# Read the worktree file permissions and update the stored permissions
 permissions_refresh_command() {
   "$GIT_BIN" hook run pre-commit
 }
@@ -448,7 +453,7 @@ hook_post-checkout_command() {
 
 # Usage: trk permissions status
 #
-# Check the status of file permissions against .gitpermissions
+# Check the status of file permissions
 permissions_status_command() {
   SETFACL_FLAGS="--test"
   permissions_apply_command
@@ -460,9 +465,6 @@ permissions_status_command() {
 #
 # Patterns need to be quoted to prevent shell expansion.
 # Patterns are gitattributes patterns, similar to .gitignore.
-#
-# Options:
-#   -f, --force  Force the command
 mark_command() {
   if [[ $# -lt 1 ]]; then
     echo "Missing file or pattern."
@@ -496,9 +498,6 @@ mark_command() {
 # Usage: trk unmark <file or pattern>
 #
 # Remove encryption mark
-#
-# Options:
-#   -f, --force  Force the command
 unmark_command() {
   if [[ $# -lt 1 ]]; then
     echo "Missing file or pattern."
