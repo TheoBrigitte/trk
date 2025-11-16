@@ -424,7 +424,7 @@ hook_pre-commit_command() {
   fi
 
   # Check if any of the tracked files have changed permissions or if the permissions list has changed
-  if ! git diff-index --cached --name-only HEAD -z -- | permissions_match_stdin 1>/dev/null && git diff-index --cached --quiet --exit-code HEAD -- "$GIT_ROOT/$PERMISSIONS_LIST_FILE"; then
+  if ! git diff --cached --name-only -z -- | permissions_match_stdin 1>/dev/null && git diff --cached --quiet --exit-code -- "$GIT_ROOT/$PERMISSIONS_LIST_FILE"; then
     return
   fi
 
