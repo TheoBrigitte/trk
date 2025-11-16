@@ -7,14 +7,14 @@
 #
 # Git wrapper for managing a repository and encrypting files.
 #
-# Any git command can be used as a <command>.
+# Any git command can be used as <command>.
 #
-# Commands:
+#   > Commands <
 #   init                 Initialize a new repository
 #   clone                Clone a repository
 #   setup                Setup the repository to use trk
 #   unsetup              Unsetup the repository from trk
-#   worktree             Show the git repository worktree and git dir
+#   info                 Show the git repository worktree and git dir
 #   version              Show version information
 #   help                 Show this help message
 #
@@ -23,7 +23,7 @@
 #   unmark               Remove encryption mark
 #   crypt                Git crypt subcommands
 #
-#   > Configuration <
+#   > Permissions <
 #   permissions apply    Apply stored permissions to files
 #   permissions refresh  Refresh the stored permissions with current file permissions
 #   permissions status   Check the status of file permissions
@@ -283,15 +283,12 @@ unsetup_command() {
   echo "WARNING: encryption cannot be disabled"
 }
 
-# Usage: trk worktree
+# Usage: trk info
 #
 # Show the git repository worktree and git dir
-worktree_command() {
-  repository="$("$GIT_BIN" rev-parse --absolute-git-dir)"
-  worktree="$("$GIT_BIN" rev-parse --path-format=absolute --show-toplevel)"
-
-  echo "worktree: $worktree"
-  echo "gitdir:   $repository"
+info_command() {
+  echo "worktree: $GIT_ROOT"
+  echo "gitdir:   $GIT_DIR"
 }
 
 # Usage: trk permissions mark <file>
@@ -453,21 +450,20 @@ mark_command() {
     error "Git-crypt filter is not properly configured. Run 'trk setup' to enable encryption."
   fi
 
-  git_root="$("$GIT_BIN" rev-parse --show-toplevel)"
   # Create .gitattributes file if it doesn't exist
-  [[ -f "$git_root/.gitattributes" ]] || touch "$git_root/.gitattributes"
+  [[ -f "$GIT_ROOT/.gitattributes" ]] || touch "$GIT_ROOT/.gitattributes"
 
   # Add the git attribute for the file
-  src="$(realpath --canonicalize-missing --relative-to "$git_root" "$1")"
+  src="$(realpath --canonicalize-missing --relative-to "$GIT_ROOT" "$1")"
   attribute=$(generate_attribute "$src")
   escaped_attribute="${attribute//\*/\\*}"
-  match="$(sed -n "\#^${escaped_attribute}\$#p" "$git_root/.gitattributes")"
+  match="$(sed -n "\#^${escaped_attribute}\$#p" "$GIT_ROOT/.gitattributes")"
   if [[ -n "$match" ]]; then
     echo "$1 is already marked for encryption."
   else
-    echo "$attribute" >> "$git_root/.gitattributes"
+    echo "$attribute" >> "$GIT_ROOT/.gitattributes"
   fi
-  "$GIT_BIN" add "$git_root/.gitattributes"
+  "$GIT_BIN" add "$GIT_ROOT/.gitattributes"
 }
 
 # Usage: trk unmark <file or pattern>
@@ -482,16 +478,15 @@ unmark_command() {
     exit 1
   fi
 
-  git_root="$("$GIT_BIN" rev-parse --show-toplevel)"
   # Create .gitattributes file if it doesn't exist
-  [[ -f "$git_root/.gitattributes" ]] || touch "$git_root/.gitattributes"
+  [[ -f "$GIT_ROOT/.gitattributes" ]] || touch "$GIT_ROOT/.gitattributes"
 
   # Remove the git attribute for the file
-  src="$(realpath --relative-to "$git_root" "$1")"
+  src="$(realpath --relative-to "$GIT_ROOT" "$1")"
   attribute=$(generate_attribute "$src")
   escaped_attribute="${attribute//\*/\\*}"
-  sed -i "\#^${escaped_attribute}\$#d" "$git_root/.gitattributes"
-  "$GIT_BIN" add "$git_root/.gitattributes"
+  sed -i "\#^${escaped_attribute}\$#d" "$GIT_ROOT/.gitattributes"
+  "$GIT_BIN" add "$GIT_ROOT/.gitattributes"
 }
 
 # Usage: trk version
@@ -610,9 +605,10 @@ main() {
   check_dependency "$GIT_CRYPT_BIN"
 
   # When not inside a git repository, operatore on the shared repository.
-  if ! "$GIT_BIN" rev-parse --absolute-git-dir &>/dev/null; then
-    export GIT_DIR="$SHARED_GIT_DIR"
+  if ! GIT_DIR="$("$GIT_BIN" rev-parse --absolute-git-dir 2>/dev/null)"; then
+    GIT_DIR="$SHARED_GIT_DIR"
   fi
+  export GIT_DIR
 
   # Fallback to git for non internal commands
   internal_commands="$(declare -pF|awk -F _ 'match($0, /([^ ]+)_command$/, m) {print m[1]}'|paste -sd'|'|tr '_' ' ')"
@@ -693,9 +689,15 @@ main() {
     help_command "${cmd_parts[*]}"
   fi
 
-  # Validate that the repository is initialized
-  if [[ "${GIT_DIR-}" == "$SHARED_GIT_DIR" && ! -d "$SHARED_GIT_DIR" && "$cmd" != init_command && "$cmd" != clone_command ]]; then
-    error "$TRK_BIN was not initialized. Run init or clone to initialize."
+  # Skip validation and GIT_ROOT for init and clone commands
+  if [[ "$cmd" != init_command && "$cmd" != clone_command ]]; then
+    # Validate that the repository is initialized
+    if [[ "${GIT_DIR-}" == "$SHARED_GIT_DIR" && ! -d "$SHARED_GIT_DIR" ]]; then
+      error "$TRK_BIN was not initialized. Run init or clone to initialize."
+    fi
+
+    # Set GIT_ROOT to the repository root
+    GIT_ROOT="$("$GIT_BIN" rev-parse --path-format=absolute --show-toplevel)"
   fi
 
   # Run trk
