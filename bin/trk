@@ -386,6 +386,10 @@ permissions_apply_command() {
 
   echo_stderr "Applying permissions"
 
+  permissions_restore
+}
+
+permissions_restore() {
   # Restore file permissions from the $PERMISSIONS_FILE file after checkout
   # Uses setfacl to restore base ACL entries (owner, group, other).
   (
@@ -467,11 +471,15 @@ permissions_list_command() {
 #
 # Check the status of file permissions
 permissions_status_command() {
+  if [[ ! -f "$GIT_ROOT/$PERMISSIONS_LIST_FILE" ]]; then
+    return
+  fi
+
   SETFACL_FLAGS="--test"
   # pipe to true to ensure this command always succeeds
   # even when there is not match, since grep is filtering out
   # unchanged permissions.
-  permissions_apply_command | grep -v ': \*,\*$' || true
+  permissions_restore | grep -v ': \*,\*$' || true
 }
 
 # Usage: trk mark <file or pattern>
