@@ -26,8 +26,8 @@ RESET := \033[0m
 
 ##@ Building
 .PHONY: build
-build: TMPDIR := $(shell mktemp -d -t $(PROJECT_NAME).XXXXXX)
 build: ## Package the application
+	$(eval TMPDIR := $(shell mktemp -d -t $(PROJECT_NAME).XXXXXX))
 	mkdir -p $(BUILD_DIR)
 	cp -r bin lib $(TMPDIR)/
 	sed -i 's/^VERSION=.*/VERSION="$(VERSION)"/' $(TMPDIR)/bin/$(PROJECT_NAME)
