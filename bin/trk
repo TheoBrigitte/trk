@@ -428,7 +428,7 @@ hook_pre-commit_command() {
   fi
 
   # Check if any of the tracked files have changed permissions or if the permissions list has changed
-  if ! git diff --cached --name-only -z -- | permissions_match_stdin 1>/dev/null && git diff --cached --quiet --exit-code -- "$GIT_ROOT/$PERMISSIONS_LIST_FILE"; then
+  if ! "$GIT_BIN" diff --cached --name-only -z -- | permissions_match_stdin 1>/dev/null && "$GIT_BIN" diff --cached --quiet --exit-code -- "$GIT_ROOT/$PERMISSIONS_LIST_FILE"; then
     return
   fi
 
@@ -447,7 +447,7 @@ hook_post-checkout_command() {
   # Always apply if null-ref was given (e.g. git clone)
   if ! echo "$previous_head" | grep -qx '0\+'; then
     # Check if any of the tracked files have changed permissions or if the permissions list has changed
-    if ! git diff "$previous_head" "$new_head" --name-only -z -- | permissions_match_stdin 1>/dev/null && git diff --quiet --exit-code "$previous_head" "$new_head" -- "$GIT_ROOT/$PERMISSIONS_FILE"; then
+    if ! "$GIT_BIN" diff "$previous_head" "$new_head" --name-only -z -- | permissions_match_stdin 1>/dev/null && "$GIT_BIN" diff --quiet --exit-code "$previous_head" "$new_head" -- "$GIT_ROOT/$PERMISSIONS_FILE"; then
       return
     fi
   fi
@@ -553,13 +553,13 @@ version_command() {
 
 # Enable permission tracking
 permissions_enable() {
-  git_hook_dir="$(git rev-parse --git-path hooks)"
+  git_hook_dir="$("$GIT_BIN" rev-parse --git-path hooks)"
   cp -i "$HOOKS_DIR/"* "$git_hook_dir/"
 }
 
 # Disable permission tracking
 permissions_disable() {
-  git_hook_dir="$(git rev-parse --git-path hooks)"
+  git_hook_dir="$("$GIT_BIN" rev-parse --git-path hooks)"
   rm -f "$git_hook_dir/pre-commit" "$git_hook_dir/post-checkout"
 }
 
