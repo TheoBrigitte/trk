@@ -14,6 +14,7 @@
 #   clone                Clone a repository
 #   setup                Setup the repository to use trk
 #   unsetup              Unsetup the repository from trk
+#   migrate              Migrate from old trk (OpenSSL) to new trk (git-crypt)
 #   info                 Show the git repository worktree and git dir
 #   version              Show version information
 #   help                 Show this help message
@@ -284,6 +285,44 @@ unsetup_command() {
   permissions_disable
 
   echo "WARNING: encryption cannot be disabled"
+}
+
+# Usage: trk migrate
+#
+# Migrate from old trk (OpenSSL-based) to new trk (git-crypt-based)
+#
+# Removes old trk configuration and re-encrypts files with git-crypt
+migrate_command() {
+  # Check if this is an old trk repository
+  old_filter="$("$GIT_BIN" config get --local filter.crypt.required 2>/dev/null || true)"
+
+  if [[ -z "$old_filter" ]]; then
+    error "This does not appear to be an old trk repository (no filter.crypt config found)"
+  fi
+
+  # Remove old encryption configuration
+  "$GIT_BIN" config unset --local filter.crypt.required 2>/dev/null || true
+  "$GIT_BIN" config unset --local filter.crypt.clean 2>/dev/null || true
+  "$GIT_BIN" config unset --local filter.crypt.smudge 2>/dev/null || true
+  "$GIT_BIN" config unset --local merge.crypt.driver 2>/dev/null || true
+  "$GIT_BIN" config unset --local diff.crypt.textconv 2>/dev/null || true
+  "$GIT_BIN" config unset --local trk.passphrase 2>/dev/null || true
+  "$GIT_BIN" config unset --local trk.openssl-args 2>/dev/null || true
+
+  # Update .gitattributes from old format to git-crypt format
+  if [[ -f "$GIT_ROOT/.gitattributes" ]]; then
+    sed -i 's/filter=crypt diff=crypt merge=crypt/filter=git-crypt diff=git-crypt/g' "$GIT_ROOT/.gitattributes"
+    sed -i 's/filter=crypt/filter=git-crypt diff=git-crypt/g' "$GIT_ROOT/.gitattributes"
+    "$GIT_BIN" add "$GIT_ROOT/.gitattributes"
+  fi
+
+  # Initialize git-crypt
+  "$GIT_CRYPT_BIN" init
+
+  # Re-encrypt all files marked for encryption
+  "$GIT_BIN" ls-files | "$GIT_BIN" check-attr --stdin filter | awk 'BEGIN { FS = ":" }; / git-crypt$/{ print $1 }' | xargs -r "$GIT_BIN" add
+
+  echo "Migration complete. Commit the changes with: trk commit -m 'Migrate to git-crypt'"
 }
 
 # Usage: trk info
