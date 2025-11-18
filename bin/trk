@@ -669,9 +669,8 @@ main() {
 
   # When not inside a git repository, operatore on the shared repository.
   if ! GIT_DIR="$("$GIT_BIN" rev-parse --absolute-git-dir 2>/dev/null)"; then
-    GIT_DIR="$SHARED_GIT_DIR"
+    export GIT_DIR="$SHARED_GIT_DIR"
   fi
-  export GIT_DIR
 
   # Fallback to git for non internal commands
   internal_commands="$(declare -pF|awk -F _ 'match($0, /([^ ]+)_command$/, m) {print m[1]}'|paste -sd'|'|tr '_' ' ')"
