@@ -410,16 +410,30 @@ permissions_refresh_command() {
 
   echo_stderr "Refreshing tracked permissions"
 
+  # Create a temporary copy of $PERMISSIONS_LIST_FILE
+  temp_file="$(mktemp --tmpdir trk-refresh.XXXXXXXXXX)"
+  trap 'rm -f "$temp_file"' EXIT
+  cp "$GIT_ROOT/$PERMISSIONS_LIST_FILE" "$temp_file"
+
+  # Delete entries for files that no longer exist
+  while IFS= read -r line; do
+    if [[ ! -f "$GIT_ROOT/$line" ]]; then
+      sed -i "\#^${line}\$#d" "$temp_file"
+    fi
+  done < "$GIT_ROOT/$PERMISSIONS_LIST_FILE"
+  # Update the permissions list file
+  mv "$temp_file" "$GIT_ROOT/$PERMISSIONS_LIST_FILE"
+
   # Generate a list of current file permissions in the repository
   # and save it to $PERMISSIONS_FILE file in the repository.
   # Uses getfacl to capture base ACL entries only (owner, group, other).
   (
     set -eu
     cd "$GIT_ROOT"
-    xargs -d '\n' -a "$GIT_ROOT/$PERMISSIONS_LIST_FILE" getfacl -R --access > "$GIT_ROOT/$PERMISSIONS_FILE"
+    xargs -r -d '\n' -a "$GIT_ROOT/$PERMISSIONS_LIST_FILE" getfacl -R --access > "$GIT_ROOT/$PERMISSIONS_FILE"
   )
 
-  git add "$GIT_ROOT/$PERMISSIONS_FILE"
+  "$GIT_BIN" add "$GIT_ROOT/$PERMISSIONS_FILE" "$GIT_ROOT/$PERMISSIONS_LIST_FILE"
 }
 
 hook_pre-commit_command() {
