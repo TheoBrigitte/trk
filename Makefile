@@ -52,7 +52,7 @@ clean: ## Clean build artifacts and Docker images
 .PHONY: shellcheck
 shellcheck:
 	@printf "$(CYAN)Running shellcheck...$(RESET)\n"
-	shellcheck bin/* lib/*
+	find bin lib -type f|xargs shellcheck
 
 .PHONY: lint
 lint: shellcheck ## Run all code quality checks

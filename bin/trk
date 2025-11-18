@@ -216,11 +216,12 @@ git_capture_worktree() {
   exec 4>&-
   directory="$(echo "$output" | awk '$3 == "worktree" {print $4}')"
   if [[ ! -d "$directory" ]]; then
-    error "Failed to determine git worktree after: $GIT_BIN $@"
+    error "Failed to determine git worktree after: $GIT_BIN $*"
   fi
 
   cd "$directory"
-  export GIT_DIR="$("$GIT_BIN" rev-parse --git-dir)"
+  GIT_DIR="$("$GIT_BIN" rev-parse --git-dir)"
+  export GIT_DIR
 }
 
 # Initialize a new repository as global repository with a specific worktree
@@ -395,6 +396,7 @@ permissions_restore() {
   (
     set -eu
     cd "$GIT_ROOT"
+    # shellcheck disable=SC2086
     setfacl ${SETFACL_FLAGS-} --restore="$GIT_ROOT/$PERMISSIONS_FILE"
   )
 }
