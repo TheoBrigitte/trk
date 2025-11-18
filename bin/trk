@@ -51,7 +51,6 @@ ENCRYPTION_ENABLED=true
 PERMISSIONS_ENABLED=false
 KEY_FILE=""
 WORKTREE=""
-set +a
 
 # Binaries dependencies
 GIT_BIN=git
@@ -59,6 +58,7 @@ GIT_CRYPT_BIN=git-crypt
 # This binary
 TRK_BIN="$(basename "$0")"
 TRK_VERSION="dev"
+set +a
 
 # Usage: trk help [ <command> ]
 #
