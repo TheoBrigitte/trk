@@ -37,33 +37,37 @@ load test_helper
 }
 
 @test "integration: clone repository with encrypted files" {
+  create_remote_repo remote/test-remote
+
   # Create source repository
+  mkdir source
+  cd source
   run trk init
   assert_success
 
   create_file "secret.txt" "my secret"
   run trk mark "secret.txt"
-  git add .
+  assert_success
+  git add "secret.txt"
   git commit --quiet -m "Add secret"
 
-  local passphrase
-  passphrase="$(trk passphrase get)"
-
   # Create remote
-  local remote
-  remote="$(create_remote_repo test-remote)"
-  git remote add origin "$remote"
+  git remote add origin "../remote/test-remote"
   git push --quiet origin main
+  run trk crypt export-key ../key
+  assert_success
+  cd ..
 
   # Clone
-  cd "$TEST_DIR"
-  git clone --quiet "$remote" cloned
-  cd cloned
-
-  run trk setup
+  run trk clone --quiet "remote/test-remote" target
   assert_success
+  cd target
 
-  git config --local trk.passphrase "$passphrase"
+  # Secret is not yet decrypted
+  ! grep -Fq "my secret" "secret.txt"
+
+  run trk crypt unlock ../key
+  assert_success
 
   # Should decrypt correctly
   assert_file_contains "secret.txt" "my secret"
@@ -75,8 +79,6 @@ load test_helper
 
   run trk init --worktree "$worktree"
   assert_success
-
-  export GIT_DIR="$HOME/.local/share/trk/repo.git"
 
   # Add files to worktree
   create_file "$worktree/.bashrc" "export PATH=/usr/local/bin:$PATH"
@@ -91,7 +93,6 @@ load test_helper
   trk commit --quiet -m "Add dotfiles"
 
   # Verify encryption
-  cd "$worktree"
   run is_encrypted_in_git ".ssh/config"
   assert_success
 
@@ -101,36 +102,6 @@ load test_helper
   local content
   content="$(trk cat-file -p "$sha")"
   [[ "$content" =~ "PATH" ]]
-}
-
-@test "integration: reencrypt after changing passphrase" {
-  run trk init
-  assert_success
-
-  create_file "secret1.txt" "password1"
-  create_file "secret2.txt" "password2"
-  run trk mark "secret1.txt"
-  run trk mark "secret2.txt"
-
-  git add .
-  git commit --quiet -m "Add secrets"
-
-  # Change passphrase
-  git config --local trk.passphrase "new-passphrase-123"
-
-  # Reencrypt
-  run trk reencrypt
-  assert_success
-
-  # Verify files still readable
-  assert_file_contains "secret1.txt" "password1"
-  assert_file_contains "secret2.txt" "password2"
-
-  # Verify encrypted in git
-  run is_encrypted_in_git "secret1.txt"
-  assert_success
-  run is_encrypted_in_git "secret2.txt"
-  assert_success
 }
 
 @test "integration: permissions workflow" {
@@ -145,10 +116,16 @@ load test_helper
   git add .
   git commit --quiet -m "Add files"
 
+  # Mark files for permission tracking
+  run trk permissions mark "script.sh"
+  assert_success
+  run trk permissions mark "data.txt"
+  assert_success
+
   run trk permissions refresh
   assert_success
 
-  git add .gitpermissions
+  git add .trk/permissions .trk/permissions_list
   git commit --quiet -m "Track permissions"
 
   # Simulate permissions change
@@ -163,40 +140,6 @@ load test_helper
   data_perm=$(stat -c "%a" "data.txt")
   [[ "$script_perm" == "755" ]]
   [[ "$data_perm" == "644" ]]
-}
-
-@test "integration: config export and import" {
-  run trk init --with-permissions
-  assert_success
-
-  # Customize configuration
-  run trk openssl set-args "-aes-128-cbc -md sha256 -pbkdf2"
-  assert_success
-
-  # Export config
-  local config_file="$TEST_DIR/exported.config"
-  trk config export > "$config_file"
-
-  # Create new repository
-  cd "$TEST_DIR"
-  mkdir new-repo
-  cd new-repo
-
-  run trk init --without-encryption --without-permissions
-  assert_success
-
-  # Import config
-  run trk config import "$config_file"
-  assert_success
-
-  # Verify configuration matches
-  run trk openssl get-args
-  assert_success
-  assert_output "-aes-128-cbc -md sha256 -pbkdf2"
-
-  run git config --local trk.permissions
-  assert_success
-  assert_output "true"
 }
 
 @test "integration: multiple encrypted patterns" {
@@ -246,12 +189,8 @@ load test_helper
   run trk mark "secret.txt"
   assert_success
 
-  git add .gitattributes
-  git commit --quiet -m "Mark secret for encryption"
-
-  # Reencrypt
-  run trk reencrypt
-  assert_success
+  git add .gitattributes secret.txt
+  git commit --quiet -m "Mark and encrypt secret"
 
   # File should now be encrypted
   run is_encrypted_in_git "secret.txt"
@@ -267,8 +206,9 @@ load test_helper
   git add .
   git commit --quiet -m "Add"
 
-  local passphrase
-  passphrase="$(trk passphrase get)"
+  # Export key before unsetup
+  run trk crypt export-key "$TEST_DIR/key"
+  assert_success
 
   # Unsetup
   run trk unsetup
@@ -278,10 +218,9 @@ load test_helper
   run is_encrypted_in_git "secret.txt"
   assert_success
 
-  # Re-setup with same passphrase
-  run trk setup
+  # Re-setup with same key
+  run trk setup --key-file "$TEST_DIR/key"
   assert_success
-  git config --local trk.passphrase "$passphrase"
 
   # Should still work
   rm secret.txt
@@ -293,7 +232,7 @@ load test_helper
   run trk init
   assert_success
 
-  run trk worktree
+  run trk info
   assert_success
   assert_output --partial  "worktree:"
   assert_output --partial  "gitdir:"
@@ -303,15 +242,15 @@ load test_helper
   run trk version
   assert_success
   assert_output --partial  "trk version"
-  assert_output --partial  "Git version"
-  assert_output --partial  "OpenSSL version"
+  assert_output --partial  "git version"
+  assert_output --partial  "git-crypt"
 }
 
 @test "integration: help command shows usage" {
   run trk help
   assert_success
   assert_output --partial  "Usage:"
-  assert_output --partial  "Commands:"
+  assert_output --partial  "> Commands <"
 }
 
 @test "integration: git commands work through trk" {
@@ -399,8 +338,55 @@ load test_helper
   assert_success
 
   # List all encrypted
-  run trk list encrypted
+  run trk crypt status
   assert_success
   assert_output --partial  "secret-1.txt"
   assert_output --partial  "secret-50.txt"
+}
+
+@test "integration: large repository with many permissions tracking" {
+  run trk init --with-permissions
+  assert_success
+
+  # Create 50 files with various permissions
+  for i in {1..50}; do
+    create_file "file-$i.txt" "content-$i"
+    if (( i % 3 == 0 )); then
+      chmod 755 "file-$i.txt"
+    elif (( i % 3 == 1 )); then
+      chmod 644 "file-$i.txt"
+    else
+      chmod 600 "file-$i.txt"
+    fi
+    run trk permissions mark "file-$i.txt"
+    assert_success
+  done
+
+  git add .
+  git commit --quiet -m "Track all permissions"
+
+  # Verify permissions list contains all files
+  run trk permissions list
+  assert_success
+  assert_output --partial  "file-1.txt"
+  assert_output --partial  "file-25.txt"
+  assert_output --partial  "file-50.txt"
+
+  # Change all permissions
+  for i in {1..50}; do
+    chmod 777 "file-$i.txt"
+  done
+
+  # Apply stored permissions
+  run trk permissions apply
+  assert_success
+
+  # Verify a sample of permissions were restored correctly
+  local perm1 perm2 perm3
+  perm1=$(stat -c "%a" "file-1.txt")
+  perm2=$(stat -c "%a" "file-3.txt")
+  perm3=$(stat -c "%a" "file-2.txt")
+  [[ "$perm1" == "644" ]]  # i % 3 == 1
+  [[ "$perm2" == "755" ]]  # i % 3 == 0
+  [[ "$perm3" == "600" ]]  # i % 3 == 2
 }
