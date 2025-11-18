@@ -28,7 +28,7 @@ RESET := \033[0m
 .PHONY: build
 build: ## Package the application
 	mkdir -p $(BUILD_DIR)
-	cp -r bin lib $(BUILD_DIR)/
+	cp -a bin lib $(BUILD_DIR)/
 	sed -i 's/^TRK_VERSION=.*/TRK_VERSION="$(VERSION)"/' $(BUILD_DIR)/bin/$(PROJECT_NAME)
 	tar --create --gzip --file $(BUILD_DIR)/$(PROJECT_NAME).tar.gz -C $(BUILD_DIR) bin lib
 
