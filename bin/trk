@@ -211,7 +211,7 @@ git_capture_worktree() {
 
   exec 4>&-
   directory="$(echo "$output" | awk '$3 == "worktree" {print $4}')"
-  if ! [[ -d "$directory" ]]; then
+  if [[ ! -d "$directory" ]]; then
     error "Failed to determine git worktree after: $GIT_BIN $@"
   fi
 
