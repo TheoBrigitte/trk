@@ -746,13 +746,23 @@ main() {
     error "Unknown command: ${cmd_parts[*]}"
   fi
 
-  if "$show_help" || [[ "$cmd" == "help_command" ]]; then
+  if "$show_help"; then
     # Display help message and exit.
     help_command "${cmd_parts[*]}"
   fi
 
-  # Skip validation and GIT_ROOT for init and clone commands
-  if [[ "$cmd" != init_command && "$cmd" != clone_command ]]; then
+  if [[ "$cmd" == "help_command" ]]; then
+    # Display help message and exit.
+    # If no additional arguments, show general usage (empty string)
+    if [[ $# -eq 0 ]]; then
+      help_command
+    else
+      help_command "$@"
+    fi
+  fi
+
+  # Skip validation and GIT_ROOT for init, clone, and version commands
+  if [[ "$cmd" != init_command && "$cmd" != clone_command && "$cmd" != version_command ]]; then
     # Validate that the repository is initialized
     if [[ "${GIT_DIR-}" == "$SHARED_GIT_DIR" && ! -d "$SHARED_GIT_DIR" ]]; then
       error "$TRK_BIN was not initialized. Run init or clone to initialize."
