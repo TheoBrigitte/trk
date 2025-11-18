@@ -27,12 +27,10 @@ RESET := \033[0m
 ##@ Building
 .PHONY: build
 build: ## Package the application
-	$(eval TMPDIR := $(shell mktemp -d -t $(PROJECT_NAME).XXXXXX))
 	mkdir -p $(BUILD_DIR)
-	cp -r bin lib $(TMPDIR)/
-	sed -i 's/^VERSION=.*/VERSION="$(VERSION)"/' $(TMPDIR)/bin/$(PROJECT_NAME)
-	tar --create --gzip --file $(BUILD_DIR)/$(PROJECT_NAME).tar.gz -C $(TMPDIR) bin lib
-	rm -rf $(TMPDIR)
+	cp -r bin lib $(BUILD_DIR)/
+	sed -i 's/^TRK_VERSION=.*/TRK_VERSION="$(VERSION)"/' $(BUILD_DIR)/bin/$(PROJECT_NAME)
+	tar --create --gzip --file $(BUILD_DIR)/$(PROJECT_NAME).tar.gz -C $(BUILD_DIR) bin lib
 
 .PHONY: install
 install: build ## Install the application to ~/.local
