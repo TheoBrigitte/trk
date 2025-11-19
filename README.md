@@ -2,6 +2,14 @@
     <img src="assets/trk.jpg" alt="trk" height="100px">
 </p>
 
+<div align="center">
+
+  [![GitHub Release](https://img.shields.io/github/v/release/TheoBrigitte/trk)](https://github.com/TheoBrigitte/trk)
+  [![test](https://github.com/TheoBrigitte/trk/actions/workflows/test.yaml/badge.svg)](https://github.com/TheoBrigitte/trk/actions/workflows/test.yaml)
+  ![GitHub Downloads](https://img.shields.io/github/downloads/TheoBrigitte/kimsufi-notifier/total)
+
+</div>
+
 # trk
 
 Trk (or track) is a Git wrapper to managed repositories, with encryption and permissions tracking capabilities.

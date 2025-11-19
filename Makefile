@@ -61,7 +61,6 @@ $(BATS_BIN): ## Install BATS testing framework
 	@echo "==> Installing bats testing framework"
 	git submodule update --init --recursive
 
-
 .PHONY: test
 test: $(BATS_BIN) ## Run all tests
 	$(BATS_BIN) $(BATS_ARGS) tests/
