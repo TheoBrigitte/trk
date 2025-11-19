@@ -1,4 +1,4 @@
-name: compatibility_test
+name: test
 
 on: push
 
