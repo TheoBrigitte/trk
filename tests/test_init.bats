@@ -12,7 +12,6 @@ load test_helper
   assert_dir_exists ".git"
 
   assert_base_configuration
-  assert_permission_configured
   assert_encryption_configured
   refute_is_global_repository
 }
@@ -37,11 +36,11 @@ load test_helper
   refute_encryption_configured
 }
 
-@test "init_normal: --without-permissions skips permissions setup" {
-  run trk init --without-permissions
+@test "init_normal: --with-permissions adds permissions setup" {
+  run trk init --with-permissions
   assert_success
 
-  refute_permission_configured
+  assert_permission_configured
 }
 
 @test "init_normal: --key-file imports encryption key" {
@@ -66,7 +65,6 @@ load test_helper
   assert_output --partial  "Initializing repository with worktree $worktree"
 
   assert_base_configuration
-  assert_permission_configured
   assert_encryption_configured
   assert_is_global_repository
 }

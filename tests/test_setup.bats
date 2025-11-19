@@ -10,7 +10,6 @@ load test_helper
   assert_success
 
   assert_base_configuration
-  assert_permission_configured
   assert_encryption_configured
   refute_is_global_repository
 }
@@ -24,13 +23,13 @@ load test_helper
   refute_encryption_configured
 }
 
-@test "setup: --without-permissions skips permissions setup" {
+@test "setup: --with-permissions adds permissions setup" {
   init_test_repo
 
-  run trk setup --without-permissions
+  run trk setup --with-permissions
   assert_success
 
-  refute_permission_configured
+  assert_permission_configured
 }
 
 @test "setup: with --key-file imports encryption key" {
@@ -85,7 +84,6 @@ load test_helper
   assert_success
 
   assert_base_configuration
-  assert_permission_configured
   assert_encryption_configured
   refute_is_global_repository
 
@@ -107,7 +105,6 @@ load test_helper
   assert_success
 
   assert_base_configuration
-  assert_permission_configured
   assert_encryption_configured
   refute_is_global_repository
 

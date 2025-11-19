@@ -15,7 +15,6 @@ load test_helper
   cd test-remote
   assert_git_checkout_clean
   assert_base_configuration
-  assert_permission_configured
   refute_is_global_repository
 }
 
