@@ -2,6 +2,12 @@
     <img src="assets/trk.jpg" alt="trk" height="100px">
 </p>
 
+<div align="center">
+
+  [![test](https://github.com/TheoBrigitte/trk/actions/workflows/test.yaml/badge.svg)](https://github.com/TheoBrigitte/trk/actions/workflows/test.yaml)
+
+</div>
+
 # trk
 
 Trk (or track) is a Git wrapper to managed repositories, with encryption and permissions tracking capabilities.
