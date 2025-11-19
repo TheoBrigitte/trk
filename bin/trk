@@ -268,6 +268,7 @@ crypt_status_command() {
 # Options:
 #   --with[out]-encryption   Setup encryption for the repository (default $ENCRYPTION_ENABLED)
 #   --with[out]-permissions  Setup permission tracking for the repository (default $PERMISSIONS_ENABLED)
+#   --key-file <path>        Path to the encryption key
 setup_command() {
   configure_repo
   configure_repo_encryption
