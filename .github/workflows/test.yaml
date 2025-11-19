@@ -8,5 +8,9 @@ jobs:
     steps:
     - name: Checkout
       uses: actions/checkout@v4
+    - name: Install dependencies
+      run: apt-get install git-crypt
+    - name: Show versions
+      run: bin/trk version
     - name: Run test
       run: make test
