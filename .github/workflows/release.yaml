@@ -1,0 +1,28 @@
+name: release
+
+on:
+  push:
+    tags:
+    - v*
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+    - name: Checkout
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    - name: Build
+      run: make build
+    - name: Create Release
+      uses: ncipollo/release-action@v1
+      with:
+        artifacts: build/trk.tar.gz
+        draft: true
+        generateReleaseNotes: true
+        allowUpdates: true
+        skipIfReleaseExists: true
+        updateOnlyUnreleased: true
