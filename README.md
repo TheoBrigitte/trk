@@ -4,9 +4,7 @@
 
 <div align="center">
 
-  [![GitHub Release](https://img.shields.io/github/v/release/TheoBrigitte/trk)](https://github.com/TheoBrigitte/trk)
   [![test](https://github.com/TheoBrigitte/trk/actions/workflows/test.yaml/badge.svg)](https://github.com/TheoBrigitte/trk/actions/workflows/test.yaml)
-  ![GitHub Downloads](https://img.shields.io/github/downloads/TheoBrigitte/trk/total)
 
 </div>
 
