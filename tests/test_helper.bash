@@ -31,6 +31,8 @@ setup() {
   # Set HOME to test directory to isolate git config
   export HOME="$TEST_DIR"
   export XDG_CONFIG_HOME="$TEST_DIR/.config"
+  # Add trk binary to PATH
+  export PATH="$TEST_ROOT/../bin:$PATH"
 
   # Configure git for tests
   git config --global user.name "Test User"
